@@ -1,0 +1,7 @@
+# Streamlit settings for MarketLens
+[theme]
+base = "dark"
+primaryColor = "#2e86de"
+
+[server]
+headless = true

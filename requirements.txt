@@ -1,0 +1,8 @@
+# MarketLens - Python packages
+# Install all of them with:  pip install -r requirements.txt
+streamlit>=1.50      # the web dashboard
+pandas>=2.2          # tables of data
+numpy>=1.26          # fast maths
+plotly>=5.22         # interactive charts
+yfinance>=0.2.50     # free historical prices from Yahoo Finance
+python-dotenv>=1.0   # reads secret keys from the .env file

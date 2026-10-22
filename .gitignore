@@ -1,0 +1,13 @@
+# Secret keys - never upload these
+.env
+.streamlit/secrets.toml
+
+# Python leftovers
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local database and downloads
+data/*.db
+data/*.csv
