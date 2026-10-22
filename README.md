@@ -18,7 +18,8 @@ with Telegram alerts, running on an AWS server.
 | Data Download (any ticker to CSV) | Ready |
 | Straddle & Strangle payoff | Ready |
 | Pine Script Generator (MA crossover) | Ready |
-| Option Chain, Premium Strategies, Momentum Engine, ETF Momentum, Custom Dashboard, Orders, Alerts, Settings | Planned (page and menu in place) |
+| Settings & Status (shows which keys are set) | Ready |
+| Option Chain, Premium Strategies, Momentum Engine, ETF Momentum, Custom Dashboard, Orders, Alerts | Planned (page and menu in place) |
 
 ## Setup, step by step (Windows + VS Code)
 
