@@ -65,9 +65,12 @@ pip install -r requirements.txt
 
 ### 4. Add your keys (optional for now)
 
-Copy `.env.example` to a new file called `.env` and fill in your Dhan and
-Telegram details. The `.env` file stays on your computer and is never uploaded.
-The ready pages work without it.
+Copy `.env.example` to a new file called `.env` and fill in your Dhan, Upstox and
+Telegram details. Each line in `.env.example` has a comment saying what it is for.
+The `.env` file stays on your computer and is never uploaded.
+The app works without it: every setting has a safe default (paper trading,
+demo mode on), and **Settings & Status** shows which keys are still missing.
+Restart the app after changing `.env`.
 
 ### 5. Run the app
 
@@ -77,6 +80,20 @@ streamlit run app.py
 
 Your browser opens at http://localhost:8501. Use the menu on the left to switch
 dashboards. Press `Ctrl + C` in the terminal to stop the app.
+
+## Running tests
+
+Tests check the calculations (for example moving averages and crossover
+signals) using small made-up price tables, so they need no internet and no keys.
+With the virtual environment turned on, run this from the MarketLens folder:
+
+```bash
+python -m pytest
+```
+
+Add `-v` to see each test by name: `python -m pytest -v`.
+Every line should say `PASSED`. Test files live in `tests/` and their names
+start with `test_`.
 
 ## Changing the stock or timeframe
 
@@ -93,8 +110,13 @@ MarketLens/
 ├── marketlens/            # shared code: settings, data download, helpers
 │   ├── config.py          # reads keys from .env
 │   ├── data.py            # downloads prices, adds moving averages
-│   └── ui.py              # small shared page pieces
+│   ├── logger.py          # writes messages to the terminal and logs/marketlens.log
+│   ├── ui.py              # small shared page pieces
+│   └── ingest/, options/, momentum/, backtest/, pine/,
+│       broker/, alerts/, scheduler/   # one folder per module (filled in later)
+├── tests/                 # automatic tests (run with: python -m pytest)
 ├── data/                  # local database and downloads (not uploaded)
+├── logs/                  # log files (not uploaded)
 ├── .streamlit/config.toml # app theme
 ├── requirements.txt       # list of packages
 └── .env.example           # template for your private keys
