@@ -124,7 +124,20 @@ close each day. The stock lists live in `data/universe/` (`nifty50.csv`,
 python scripts/update_universe.py
 ```
 
-### 7. Run the app
+### 7. Download intraday candles from Dhan (module 3)
+
+Open **3. Historical Data Downloader** in the app. Tabs **Index** (NIFTY, BANKNIFTY,
+FINNIFTY, SENSEX), **Index futures** (live current / next / far month contracts) and
+**Stocks** show the instrument's Dhan **Security ID**. Choose From date, To date,
+timeframe (**1, 5, 15, 25, 60 min or 1 day**) and a download folder, then click **Download**:
+the candles are saved as a CSV in that folder and in PostgreSQL (`price_bars`).
+
+- Intraday: last 5 years only; long ranges are fetched in 90-day pieces automatically.
+- Futures: history starts when that contract was listed (Dhan only lists live contracts).
+- Without Dhan keys the page makes clearly labelled **DEMO** candles (`DEMO_...csv`),
+  which are never saved to the database.
+
+### 8. Run the app
 
 ```bash
 streamlit run app.py
@@ -169,6 +182,8 @@ MarketLens/
 │   ├── data.py            # downloads prices, adds moving averages
 │   ├── db.py              # PostgreSQL connection, sessions, upsert helper
 │   ├── models.py          # the 24 database tables
+│   ├── broker/dhan_client.py  # Dhan connection (dhanhq), retries, 5 requests/second
+│   ├── ingest/            # prices.py (yfinance daily), dhan_master.py (Security IDs), historical.py (Dhan candles)
 │   ├── costs.py           # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
 │   ├── utils.py           # @retry and RateLimiter helpers
 │   ├── logger.py          # writes messages to the terminal and logs/marketlens.log

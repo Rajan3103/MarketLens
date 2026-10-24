@@ -13,6 +13,10 @@ logs/
 
 # Local downloads (the database itself lives in PostgreSQL, not in this folder)
 data/*.csv
+data/downloads/
+
+# Dhan's instrument list (re-downloaded once a day)
+data/dhan/
 
 # pytest leftovers
 .pytest_cache/

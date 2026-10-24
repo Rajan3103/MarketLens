@@ -89,6 +89,8 @@ DATABASE_URL = get_str("DATABASE_URL", "postgresql+psycopg://postgres@localhost:
 # A separate, empty database used only by the tests (empty = database tests are skipped)
 TEST_DATABASE_URL = get_str("TEST_DATABASE_URL")
 DATA_SOURCE = get_choice("DATA_SOURCE", "yfinance", ["yfinance", "dhan"])
+# Default folder for the Historical Data Downloader (module 3); the page lets you change it
+DOWNLOAD_DIR = get_str("DOWNLOAD_DIR", "data/downloads")
 DEMO_MODE = get_bool("DEMO_MODE", True)
 
 # ---- Trading safety ----

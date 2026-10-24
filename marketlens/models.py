@@ -66,22 +66,25 @@ def created_now():
 # =====================================================================
 
 class Instrument(Base):
-    """Every stock, ETF and index we track: RELIANCE, NIFTYBEES, NIFTY, SENSEX..."""
+    """Every stock, ETF, index and futures contract we track: RELIANCE, NIFTYBEES, NIFTY,
+    SENSEX, NIFTY-Nov2026-FUT..."""
     __tablename__ = "instruments"
     id: Mapped[int] = mapped_column(primary_key=True)
     symbol: Mapped[str]                       # e.g. RELIANCE, NIFTY
     exchange: Mapped[str] = mapped_column(server_default="NSE")
-    instrument_type: Mapped[str]              # EQUITY, ETF or INDEX
+    instrument_type: Mapped[str]              # EQUITY, ETF, INDEX or FUTURES
     name: Mapped[str | None]
     yf_ticker: Mapped[str | None]             # e.g. RELIANCE.NS, ^NSEI
     dhan_security_id: Mapped[str | None]      # Dhan's id for this instrument
+    segment: Mapped[str | None]               # Dhan exchange segment: IDX_I, NSE_EQ, NSE_FNO, BSE_FNO
+    expiry: Mapped[dt.date | None]            # futures only
     lot_size: Mapped[int | None]
     is_active: Mapped[bool] = mapped_column(server_default=text("true"))
     created_at: Mapped[dt.datetime] = created_now()
     __table_args__ = (
         UniqueConstraint("symbol", "exchange"),
         one_of("exchange", ["NSE", "BSE"]),
-        one_of("instrument_type", ["EQUITY", "ETF", "INDEX"]),
+        one_of("instrument_type", ["EQUITY", "ETF", "INDEX", "FUTURES"]),
     )
 
 
@@ -101,19 +104,28 @@ class DailyPrice(Base):
     __table_args__ = (UniqueConstraint("instrument_id", "date"),)
 
 
-class IntradayIndexPrice(Base):
-    """Minute bars for index spot prices: NIFTY, BANKNIFTY, FINNIFTY, SENSEX."""
-    __tablename__ = "intraday_index_prices"
+class PriceBar(Base):
+    """Candles downloaded from Dhan for indices, stocks and futures, at any timeframe.
+
+    timeframe is in minutes: 1, 5, 15, 25, 60, or 1440 for daily candles.
+    (daily_prices keeps the free yfinance history; the two are never mixed.)
+    """
+    __tablename__ = "price_bars"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    # The index itself is a row in instruments (instrument_type = INDEX)
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id", ondelete="CASCADE"))
-    ts: Mapped[dt.datetime]                   # start of the minute
+    timeframe: Mapped[int]
+    ts: Mapped[dt.datetime]                   # start time of the candle (IST)
     open: Mapped[Decimal]
     high: Mapped[Decimal]
     low: Mapped[Decimal]
     close: Mapped[Decimal]
     volume: Mapped[int | None] = mapped_column(BigInteger)
-    __table_args__ = (UniqueConstraint("instrument_id", "ts"),)
+    oi: Mapped[int | None] = mapped_column(BigInteger)   # open interest (futures)
+    # The unique key also works as the (instrument_id, timeframe, ts) index
+    __table_args__ = (
+        UniqueConstraint("instrument_id", "timeframe", "ts"),
+        CheckConstraint("timeframe IN (1, 5, 15, 25, 60, 1440)", name="timeframe_valid"),
+    )
 
 
 class OptionContract(Base):

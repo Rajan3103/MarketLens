@@ -14,7 +14,7 @@ coming_soon("Forward Test / Paper Trading", [
 ])
 # Cost settings this page will use (change them in the box)
 costs = cost_settings_inputs("forward_test")
-example = round_trip_costs("options", 200, 200, 75, costs, entry_side="SELL")
-st.caption(f"Example with these settings: selling 1 NIFTY lot (75) at Rs 200 and buying it "
+example = round_trip_costs("options", 200, 200, 65, costs, entry_side="SELL")
+st.caption(f"Example with these settings: selling 1 NIFTY lot (65) at Rs 200 and buying it "
            f"back at Rs 200 costs Rs {example:,.2f}.")
 historical_note()

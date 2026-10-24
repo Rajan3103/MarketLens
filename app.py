@@ -21,7 +21,7 @@ pages = {
     "Market & data": [
         st.Page("dashboards/market_overview.py", title="1. Live Market Overview", icon="📊"),
         st.Page("dashboards/option_chain.py", title="2. Option Chain & Strategy Builder", icon="🔗"),
-        st.Page("dashboards/options_downloader.py", title="3. Options Data Downloader", icon="📥"),
+        st.Page("dashboards/options_downloader.py", title="3. Historical Data Downloader", icon="📥"),
     ],
     "Options testing": [
         st.Page("dashboards/options_backtester.py", title="4. Options Backtester", icon="🧪"),
