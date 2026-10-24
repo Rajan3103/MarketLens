@@ -108,7 +108,23 @@ alembic revision --autogenerate -m "what changed"
 alembic upgrade head
 ```
 
-### 6. Run the app
+### 6. Download prices into the database
+
+```bash
+python scripts/sync_prices.py --universe etfs --years 10
+python scripts/sync_prices.py --universe nifty200 --years 10
+```
+
+The first run downloads everything (about 1.5 minutes for Nifty 200 x 10 years);
+later runs only fetch the missing days and take seconds. Run it after market
+close each day. The stock lists live in `data/universe/` (`nifty50.csv`,
+`nifty200.csv`, `etfs.csv`); NSE changes the Nifty lists twice a year, so refresh them with:
+
+```bash
+python scripts/update_universe.py
+```
+
+### 7. Run the app
 
 ```bash
 streamlit run app.py
@@ -160,9 +176,10 @@ MarketLens/
 │   └── ingest/, options/, backtest/, simulator/, signals/, momentum/,
 │       broker/, trading/, alerts/, scheduler/, webhook/   # one folder per area (filled in later)
 ├── migrations/            # Alembic database migrations (versions/0001_initial_tables.py)
-├── scripts/init_db.py     # creates the database and tables
+├── scripts/               # init_db.py, sync_prices.py, update_universe.py
 ├── alembic.ini            # Alembic settings (no password: it reads .env)
 ├── tests/                 # automatic tests (run with: python -m pytest)
+├── data/universe/         # nifty50.csv, nifty200.csv, etfs.csv (symbol lists)
 ├── data/                  # local CSV downloads (not uploaded)
 ├── logs/                  # log files (not uploaded)
 ├── .streamlit/config.toml # app theme

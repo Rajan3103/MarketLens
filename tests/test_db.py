@@ -13,10 +13,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, inspect, select, text
 
-from marketlens import config
-from marketlens.db import (alembic_config, connection_status, ensure_database_exists,
-                           explain_db_error, get_engine, get_session, prepare_upsert_rows,
-                           to_psycopg_url, upsert)
+from marketlens.db import explain_db_error, get_engine, prepare_upsert_rows, to_psycopg_url, upsert
 from marketlens.models import Base, DailyPrice, Instrument
 
 URL = "postgresql+psycopg://ml_user:pw@localhost:5432/marketlens"
@@ -92,37 +89,6 @@ def test_model_column_types():
 # Tests that use the TEST database
 # ---------------------------------------------------------------------
 
-# Connect to TEST_DATABASE_URL, build the tables with Alembic, or skip with a reason.
-@pytest.fixture(scope="module")
-def test_url():
-    url = config.TEST_DATABASE_URL
-    if not url:
-        pytest.skip("TEST_DATABASE_URL is not set in .env, so database tests are skipped.")
-    if to_psycopg_url(url) == to_psycopg_url(config.DATABASE_URL):
-        pytest.fail("TEST_DATABASE_URL must be a different database from DATABASE_URL.")
-    try:
-        ensure_database_exists(url)
-    except Exception:
-        pass  # connection_status below gives the friendly reason
-    ok, message = connection_status(url)
-    if not ok:
-        pytest.skip(f"Test database not reachable: {message}")
-
-    from alembic import command
-    command.upgrade(alembic_config(url), "head")
-    return url
-
-
-# Empty every table before each test so tests never depend on each other.
-@pytest.fixture
-def session(test_url):
-    names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
-    with get_engine(test_url).begin() as conn:
-        conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
-    with get_session(test_url) as s:
-        yield s
-
-
 # Make one instrument row and return its id.
 def add_instrument(session) -> int:
     reliance = Instrument(symbol="RELIANCE", instrument_type="EQUITY", yf_ticker="RELIANCE.NS")
@@ -132,14 +98,15 @@ def add_instrument(session) -> int:
 
 
 # Alembic created every table from models.py.
-def test_migration_created_all_tables(test_url):
-    names = set(inspect(get_engine(test_url)).get_table_names())
+def test_migration_created_all_tables(db_url):
+    names = set(inspect(get_engine(db_url)).get_table_names())
     assert set(Base.metadata.tables) <= names
     assert "alembic_version" in names
 
 
 # The main test: insert two prices, re-insert one, and check there is no duplicate.
-def test_upsert_does_not_duplicate(session):
+def test_upsert_does_not_duplicate(db_session):
+    session = db_session
     inst = add_instrument(session)
     day1, day2 = dt.date(2026, 10, 20), dt.date(2026, 10, 21)
     rows = [
@@ -162,7 +129,8 @@ def test_upsert_does_not_duplicate(session):
 
 
 # Thousands of rows in one call work (FR-04).
-def test_upsert_thousands_of_rows(session):
+def test_upsert_thousands_of_rows(db_session):
+    session = db_session
     inst = add_instrument(session)
     start = dt.date(2000, 1, 1)
     rows = [{"instrument_id": inst, "date": start + dt.timedelta(days=i),
@@ -174,8 +142,8 @@ def test_upsert_thousands_of_rows(session):
 
 
 # Times come back in Indian time (Asia/Kolkata).
-def test_timestamps_are_ist(test_url):
-    with get_engine(test_url).connect() as conn:
+def test_timestamps_are_ist(db_url):
+    with get_engine(db_url).connect() as conn:
         assert conn.execute(text("SHOW timezone")).scalar() == "Asia/Kolkata"
         now = conn.execute(text("SELECT now()")).scalar()
     assert now.utcoffset() == dt.timedelta(hours=5, minutes=30)

@@ -1,0 +1,14 @@
+symbol,name,category
+NIFTYBEES,Nippon India ETF Nifty 50 BeES,Equity - Large Cap
+JUNIORBEES,Nippon India ETF Nifty Next 50 Junior BeES,Equity - Large Cap
+MOM100,Motilal Oswal Nifty Midcap 100 ETF,Equity - Mid Cap
+BANKBEES,Nippon India ETF Nifty Bank BeES,Equity - Sector
+PSUBNKBEES,Nippon India ETF Nifty PSU Bank BeES,Equity - Sector
+ITBEES,Nippon India ETF Nifty IT,Equity - Sector
+PHARMABEES,Nippon India Nifty Pharma ETF,Equity - Sector
+CPSEETF,CPSE ETF,Equity - Thematic
+MON100,Motilal Oswal Nasdaq 100 ETF,International
+MAFANG,Mirae Asset NYSE FANG+ ETF,International
+GOLDBEES,Nippon India ETF Gold BeES,Commodity - Gold
+SILVERBEES,Nippon India Silver ETF,Commodity - Silver
+LIQUIDBEES,Nippon India ETF Nifty 1D Rate Liquid BeES,Cash
