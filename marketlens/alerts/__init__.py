@@ -1,1 +1,1 @@
-"""M9 Alerts: price alerts and the Telegram bot."""
+"""Telegram bot, commands and alerts (module 12)."""

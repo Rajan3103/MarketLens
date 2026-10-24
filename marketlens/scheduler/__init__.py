@@ -1,1 +1,1 @@
-"""M11 Scheduler: run downloads and strategies at set times."""
+"""Runs jobs at set times: data downloads, strategies and daily reports."""

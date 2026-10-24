@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from marketlens import config
+from marketlens.ui import trading_mode_banner
 
 st.title("⚙️ Settings & Status")
 st.info(
@@ -16,10 +17,7 @@ st.info(
 
 # ---- 1. Trading mode ----
 st.subheader("Trading mode")
-if config.TRADING_MODE == "live":
-    st.error("Mode: LIVE. Orders use real money.")
-else:
-    st.success("Mode: PAPER. Orders are practice only. Set TRADING_MODE=live in .env to change.")
+trading_mode_banner()
 if config.AUTO_TRADE:
     st.warning("AUTO_TRADE is on: strategies may place orders without asking you.")
 

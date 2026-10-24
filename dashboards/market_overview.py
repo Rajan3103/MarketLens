@@ -1,4 +1,4 @@
-"""Market Overview: index cards plus a price chart with 20/50-day moving averages.
+"""Module 1 - Live Market Overview: index cards plus a price chart with 20/50-day moving averages.
 
 Requirements FR-06 and FR-08.
 """

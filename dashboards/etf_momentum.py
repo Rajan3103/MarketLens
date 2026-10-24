@@ -1,7 +1,7 @@
-"""ETF Momentum Portfolio (planned). Requirements FR-16 and FR-17."""
+"""Module 9 - ETF Momentum Portfolio (planned). Requirements FR-16 and FR-17."""
 import streamlit as st
 
-from marketlens.ui import coming_soon
+from marketlens.ui import coming_soon, historical_note
 
 st.title("🧺 ETF Momentum Portfolio")
 coming_soon("ETF Momentum Portfolio", [
@@ -9,3 +9,4 @@ coming_soon("ETF Momentum Portfolio", [
     "Hold the top K ETFs by momentum, rebalanced monthly",
     "Backtested equity curve, CAGR and drawdown against Nifty 50",
 ])
+historical_note()

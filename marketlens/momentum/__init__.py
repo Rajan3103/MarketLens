@@ -1,1 +1,1 @@
-"""M4 and M5 Momentum: stock and ETF momentum ranking and portfolios."""
+"""Momentum stock and ETF portfolios and their backtests (modules 8 and 9)."""

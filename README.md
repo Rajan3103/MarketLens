@@ -11,15 +11,20 @@ with Telegram alerts, running on an AWS server.
 
 ## What works today
 
-| Menu item | Status |
-| --- | --- |
-| Home | Ready |
-| Market Overview (Nifty, Bank Nifty, VIX, chart with 20/50-day moving averages and crossover signals) | Ready |
-| Data Download (any ticker to CSV) | Ready |
-| Straddle & Strangle payoff | Ready |
-| Pine Script Generator (MA crossover) | Ready |
-| Settings & Status (shows which keys are set) | Ready |
-| Option Chain, Premium Strategies, Momentum Engine, ETF Momentum, Custom Dashboard, Orders, Alerts | Planned (page and menu in place) |
+The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
+
+| Group | Module | Status |
+| --- | --- | --- |
+| Start | Home, Settings & Status (which keys are set, PAPER/LIVE mode) | Ready |
+| Market & data | 1. Live Market Overview (index cards, chart with moving averages and crossover signals) | Ready |
+| | 2. Option Chain & Strategy Builder | Strategy builder (straddle/strangle payoff) ready; option chain planned |
+| | 3. Options Data Downloader | Equity/ETF/index CSV download ready; Dhan options data planned |
+| Options testing | 4. Options Backtester, 5. Option Simulator, 6. Forward Test / Paper Trading | Planned |
+| Indicator & portfolio | 7. Signals & Indicator Strategy Builder | Pine Script export ready; rules and webhooks planned |
+| | 8. Momentum Engine Backtest, 9. ETF Momentum Portfolio | Planned |
+| Control centre | 10. Personal Analytics & Strategy Library, 11. Live Algo Trading & Bot Monitor, 12. Telegram Bot Control Panel | Planned |
+
+Planned pages already appear in the menu and list what they will do.
 
 ## Setup, step by step (Windows + VS Code)
 
@@ -97,7 +102,7 @@ start with `test_`.
 
 ## Changing the stock or timeframe
 
-On **Market Overview**, type any NSE ticker followed by `.NS`
+On **1. Live Market Overview**, type any NSE ticker followed by `.NS`
 (for example `TCS.NS`, `INFY.NS`, `HDFCBANK.NS`) and pick a timeframe
 (6 months to 5 years). Indices start with `^`: `^NSEI` is Nifty 50, `^NSEBANK` is Bank Nifty.
 
@@ -112,8 +117,8 @@ MarketLens/
 │   ├── data.py            # downloads prices, adds moving averages
 │   ├── logger.py          # writes messages to the terminal and logs/marketlens.log
 │   ├── ui.py              # small shared page pieces
-│   └── ingest/, options/, momentum/, backtest/, pine/,
-│       broker/, alerts/, scheduler/   # one folder per module (filled in later)
+│   └── ingest/, options/, backtest/, simulator/, signals/, momentum/,
+│       broker/, trading/, alerts/, scheduler/, webhook/   # one folder per area (filled in later)
 ├── tests/                 # automatic tests (run with: python -m pytest)
 ├── data/                  # local database and downloads (not uploaded)
 ├── logs/                  # log files (not uploaded)

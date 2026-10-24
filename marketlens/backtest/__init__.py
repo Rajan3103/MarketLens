@@ -1,1 +1,1 @@
-"""M6 Backtest engine: test strategies on past data and measure results."""
+"""Options backtest engine: run strategies on past options data (module 4)."""
