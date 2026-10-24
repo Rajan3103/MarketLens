@@ -1,7 +1,8 @@
 """Module 6 - Forward Test / Paper Trading (planned)."""
 import streamlit as st
 
-from marketlens.ui import coming_soon, historical_note, trading_mode_banner
+from marketlens.costs import round_trip_costs
+from marketlens.ui import cost_settings_inputs, coming_soon, historical_note, trading_mode_banner
 
 st.title("📝 Forward Test / Paper Trading")
 trading_mode_banner()
@@ -11,4 +12,9 @@ coming_soon("Forward Test / Paper Trading", [
     "Compare forward-test results with the strategy's backtest",
     "Daily P&L log saved to the database",
 ])
+# Cost settings this page will use (change them in the box)
+costs = cost_settings_inputs("forward_test")
+example = round_trip_costs("options", 200, 200, 75, costs, entry_side="SELL")
+st.caption(f"Example with these settings: selling 1 NIFTY lot (75) at Rs 200 and buying it "
+           f"back at Rs 200 costs Rs {example:,.2f}.")
 historical_note()

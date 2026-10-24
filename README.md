@@ -153,6 +153,8 @@ MarketLens/
 │   ├── data.py            # downloads prices, adds moving averages
 │   ├── db.py              # PostgreSQL connection, sessions, upsert helper
 │   ├── models.py          # the 24 database tables
+│   ├── costs.py           # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
+│   ├── utils.py           # @retry and RateLimiter helpers
 │   ├── logger.py          # writes messages to the terminal and logs/marketlens.log
 │   ├── ui.py              # small shared page pieces
 │   └── ingest/, options/, backtest/, simulator/, signals/, momentum/,

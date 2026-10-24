@@ -1,7 +1,8 @@
 """Module 5 - Option Simulator (planned). Similar in spirit to StockMock."""
 import streamlit as st
 
-from marketlens.ui import coming_soon, historical_note, key_notice
+from marketlens.costs import round_trip_costs
+from marketlens.ui import cost_settings_inputs, coming_soon, historical_note, key_notice
 
 st.title("⏪ Option Simulator")
 key_notice("Dhan", ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"],
@@ -13,4 +14,9 @@ coming_soon("Option Simulator", [
     "Live P&L, payoff chart and Greeks as the day moves",
     "Save each practice session to your analytics",
 ])
+# Cost settings this page will use (change them in the box)
+costs = cost_settings_inputs("simulator")
+example = round_trip_costs("options", 200, 200, 75, costs, entry_side="SELL")
+st.caption(f"Example with these settings: selling 1 NIFTY lot (75) at Rs 200 and buying it "
+           f"back at Rs 200 costs Rs {example:,.2f}.")
 historical_note()
