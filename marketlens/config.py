@@ -74,13 +74,9 @@ def get_choice(name: str, default: str, choices: list[str]) -> str:
     return default
 
 
-# ---- Broker keys ----
+# ---- Dhan: the only broker and market-data API ----
 DHAN_CLIENT_ID = get_str("DHAN_CLIENT_ID")
 DHAN_ACCESS_TOKEN = get_str("DHAN_ACCESS_TOKEN")
-UPSTOX_API_KEY = get_str("UPSTOX_API_KEY")
-UPSTOX_API_SECRET = get_str("UPSTOX_API_SECRET")
-UPSTOX_REDIRECT_URI = get_str("UPSTOX_REDIRECT_URI")
-UPSTOX_ACCESS_TOKEN = get_str("UPSTOX_ACCESS_TOKEN")
 
 # ---- Telegram ----
 TELEGRAM_BOT_TOKEN = get_str("TELEGRAM_BOT_TOKEN")
@@ -88,8 +84,11 @@ TELEGRAM_CHAT_ID = get_str("TELEGRAM_CHAT_ID")
 
 # ---- App ----
 DASHBOARD_PASSWORD = get_str("DASHBOARD_PASSWORD")
-DATABASE_URL = get_str("DATABASE_URL", "sqlite:///data/marketlens.db")
-DATA_SOURCE = get_choice("DATA_SOURCE", "yfinance", ["yfinance", "dhan", "upstox"])
+# PostgreSQL only. The password goes in .env, never in the code.
+DATABASE_URL = get_str("DATABASE_URL", "postgresql+psycopg://postgres@localhost:5432/marketlens")
+# A separate, empty database used only by the tests (empty = database tests are skipped)
+TEST_DATABASE_URL = get_str("TEST_DATABASE_URL")
+DATA_SOURCE = get_choice("DATA_SOURCE", "yfinance", ["yfinance", "dhan"])
 DEMO_MODE = get_bool("DEMO_MODE", True)
 
 # ---- Trading safety ----
@@ -103,13 +102,10 @@ MAX_ORDERS_PER_SECOND = get_number("MAX_ORDERS_PER_SECOND", 5, int, minimum=1)
 KEYS = [
     ("DHAN_CLIENT_ID", "Dhan: live option chain, expired options data, orders"),
     ("DHAN_ACCESS_TOKEN", "Dhan: needed together with the client ID"),
-    ("UPSTOX_API_KEY", "Upstox: login and market data"),
-    ("UPSTOX_API_SECRET", "Upstox: needed together with the API key"),
-    ("UPSTOX_REDIRECT_URI", "Upstox: where the login page sends you back"),
-    ("UPSTOX_ACCESS_TOKEN", "Upstox: market data and orders for today"),
     ("TELEGRAM_BOT_TOKEN", "Telegram: send alerts and answer bot commands"),
     ("TELEGRAM_CHAT_ID", "Telegram: which chat receives the alerts"),
     ("DASHBOARD_PASSWORD", "Password lock for the dashboard on a server"),
+    ("TEST_DATABASE_URL", "Database tests (pytest) on a separate test database"),
 ]
 
 

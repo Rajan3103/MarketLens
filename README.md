@@ -70,14 +70,45 @@ pip install -r requirements.txt
 
 ### 4. Add your keys (optional for now)
 
-Copy `.env.example` to a new file called `.env` and fill in your Dhan, Upstox and
-Telegram details. Each line in `.env.example` has a comment saying what it is for.
+Copy `.env.example` to a new file called `.env` and fill in your Dhan and
+Telegram details (Dhan is the only broker MarketLens uses). Each line in `.env.example` has a comment saying what it is for.
 The `.env` file stays on your computer and is never uploaded.
 The app works without it: every setting has a safe default (paper trading,
 demo mode on), and **Settings & Status** shows which keys are still missing.
 Restart the app after changing `.env`.
 
-### 5. Run the app
+### 5. Set up the database (PostgreSQL)
+
+MarketLens keeps its data in **PostgreSQL** (17 or newer). Install it from
+https://www.postgresql.org/download/ (Windows) or with `sudo apt install postgresql`
+(Ubuntu), and remember the password you choose for the `postgres` user.
+
+Put that password in `.env` (replace `YOUR_PASSWORD`):
+
+```
+DATABASE_URL=postgresql+psycopg://postgres:YOUR_PASSWORD@localhost:5432/marketlens
+TEST_DATABASE_URL=postgresql+psycopg://postgres:YOUR_PASSWORD@localhost:5432/marketlens_test
+```
+
+Then create the database and all its tables with one command:
+
+```bash
+python scripts/init_db.py
+```
+
+It creates the `marketlens` database if it is missing, runs the Alembic
+migrations and prints every table with its row count. It is safe to run again.
+If something is wrong (PostgreSQL not running, wrong password) it tells you how to fix it.
+**Settings & Status** also has a *Test database connection* button.
+
+When `marketlens/models.py` changes later, make and apply a new migration:
+
+```bash
+alembic revision --autogenerate -m "what changed"
+alembic upgrade head
+```
+
+### 6. Run the app
 
 ```bash
 streamlit run app.py
@@ -97,6 +128,11 @@ python -m pytest
 ```
 
 Add `-v` to see each test by name: `python -m pytest -v`.
+
+Database tests in `tests/test_db.py` use **`TEST_DATABASE_URL`**, a separate
+database that the tests empty and refill. They never touch `DATABASE_URL`.
+If `TEST_DATABASE_URL` is empty or unreachable those tests are *skipped*;
+add `-rs` to see why: `python -m pytest -rs`.
 Every line should say `PASSED`. Test files live in `tests/` and their names
 start with `test_`.
 
@@ -115,12 +151,17 @@ MarketLens/
 ├── marketlens/            # shared code: settings, data download, helpers
 │   ├── config.py          # reads keys from .env
 │   ├── data.py            # downloads prices, adds moving averages
+│   ├── db.py              # PostgreSQL connection, sessions, upsert helper
+│   ├── models.py          # the 24 database tables
 │   ├── logger.py          # writes messages to the terminal and logs/marketlens.log
 │   ├── ui.py              # small shared page pieces
 │   └── ingest/, options/, backtest/, simulator/, signals/, momentum/,
 │       broker/, trading/, alerts/, scheduler/, webhook/   # one folder per area (filled in later)
+├── migrations/            # Alembic database migrations (versions/0001_initial_tables.py)
+├── scripts/init_db.py     # creates the database and tables
+├── alembic.ini            # Alembic settings (no password: it reads .env)
 ├── tests/                 # automatic tests (run with: python -m pytest)
-├── data/                  # local database and downloads (not uploaded)
+├── data/                  # local CSV downloads (not uploaded)
 ├── logs/                  # log files (not uploaded)
 ├── .streamlit/config.toml # app theme
 ├── requirements.txt       # list of packages

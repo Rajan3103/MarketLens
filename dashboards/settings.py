@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from marketlens import config
+from marketlens.db import connection_status
 from marketlens.ui import trading_mode_banner
 
 st.title("⚙️ Settings & Status")
@@ -42,6 +43,17 @@ others = {
     "DATA_SOURCE": config.DATA_SOURCE,
     "DEMO_MODE": config.DEMO_MODE,
     "DATABASE_URL": config.safe_database_url(),  # password hidden
+    "TEST_DATABASE_URL": config.safe_database_url(config.TEST_DATABASE_URL) or "(not set)",
 }
 st.dataframe(pd.DataFrame({"Setting": others.keys(), "Value": [str(v) for v in others.values()]}),
              hide_index=True, width="stretch")
+
+# ---- 4. Database (PostgreSQL) ----
+st.subheader("Database")
+st.write("First time? Run `python scripts/init_db.py` in the terminal to create the tables.")
+if st.button("Test database connection"):
+    ok, message = connection_status()
+    if ok:
+        st.success(message)
+    else:
+        st.error(message)

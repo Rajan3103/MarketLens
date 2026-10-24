@@ -60,12 +60,12 @@ def test_get_choice_trading_mode(monkeypatch, text, expected):
 # Loaded settings always have the right type, whatever is in .env.
 def test_loaded_settings_have_safe_types():
     assert config.TRADING_MODE in ("paper", "live")
-    assert config.DATA_SOURCE in ("yfinance", "dhan", "upstox")
+    assert config.DATA_SOURCE in ("yfinance", "dhan")
     assert isinstance(config.AUTO_TRADE, bool)
     assert isinstance(config.DEMO_MODE, bool)
     assert isinstance(config.MAX_DAILY_LOSS_RS, float)
     assert isinstance(config.MAX_ORDERS_PER_SECOND, int)
-    assert config.DATABASE_URL
+    assert config.DATABASE_URL.startswith(("postgresql", "postgres://"))  # PostgreSQL only
 
 
 # key_status lists every key as (name, is_set, what_it_unlocks).
@@ -94,4 +94,12 @@ def test_safe_database_url_hides_password():
     shown = config.safe_database_url(url)
     assert "s3cret" not in shown
     assert shown == "postgresql://***@db.example.com:5432/marketlens"
-    assert config.safe_database_url("sqlite:///data/marketlens.db") == "sqlite:///data/marketlens.db"
+    no_password = "postgresql+psycopg://localhost:5432/marketlens"
+    assert config.safe_database_url(no_password) == no_password
+
+
+# Upstox was removed: Dhan is the only broker.
+def test_no_upstox_keys():
+    names = [name for name, _ in config.KEYS]
+    assert not any("UPSTOX" in name for name in names)
+    assert "DHAN_CLIENT_ID" in names
