@@ -150,3 +150,34 @@ def test_dhan_failure_falls_back(dhan_lookups, monkeypatch):
     monkeypatch.setattr(overview, "_yf_closes", lambda tickers: fake_yf_data(closes))
     snap = get_snapshot(FakeDhanClient(fail=True))
     assert snap.source == SOURCE_YF and snap.stocks.loc[0, "pct_change"] == -1.0
+
+
+# ---- sector heatmap ----
+
+# Fake sector history: every sector rises 1% a day for 30 days, except Media (1 close only).
+def fake_sector_data() -> pd.DataFrame:
+    days = pd.bdate_range("2026-09-01", periods=30)
+    frames = {}
+    for sector, ticker in overview.SECTOR_INDICES:
+        values = [100 * 1.01 ** i for i in range(30)] if sector != "Media" else [None] * 29 + [1637.4]
+        frames[ticker] = pd.DataFrame({"Close": values}, index=days)
+    return pd.concat(frames, axis=1)
+
+
+# % change over 1 day, 1 week (5 trading days) and 1 month (21 trading days).
+@pytest.mark.parametrize("window, back", [("1 day", 1), ("1 week", 5), ("1 month", 21)])
+def test_sector_changes(window, back):
+    table, skipped = overview.sector_changes(fake_sector_data(), window)
+    assert len(table) == 9 and skipped == ["Media"]
+    assert table["pct_change"].round(6).eq(round((1.01 ** back - 1) * 100, 6)).all()
+    assert list(table["sector"])[:3] == ["Bank", "IT", "Auto"]
+
+
+# A sector with too little data is skipped AND written to the log.
+def test_sector_skip_is_logged(monkeypatch):
+    messages = []
+    monkeypatch.setattr(overview.log, "warning", lambda msg, *a: messages.append(msg % a))
+    data = fake_sector_data().drop(columns="^CNXIT", level=0)     # IT missing completely
+    table, skipped = overview.sector_changes(data, "1 day")
+    assert skipped == ["IT", "Media"] and "IT" not in set(table["sector"])
+    assert any("IT (^CNXIT)" in m for m in messages) and any("Media" in m for m in messages)

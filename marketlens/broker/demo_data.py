@@ -28,7 +28,7 @@ from marketlens.broker.dhan_data import (CHAIN_COLUMNS, QUOTE_COLUMNS, OptionCha
 from marketlens.broker.dhan_instruments import INDICES, Security
 from marketlens.logger import get_logger
 from marketlens.options import expiries
-from marketlens.options.pricing import RISK_FREE_RATE, bs_greeks, bs_price
+from marketlens.options.pricing import RISK_FREE_RATE, bs_price, greeks
 from marketlens.utils import retry
 
 log = get_logger(__name__)
@@ -217,8 +217,8 @@ class DemoDataClient:
             row = {"strike": float(strike)}
             for side, centre in (("ce", spot * 1.01), ("pe", spot * 0.99)):
                 opt = side.upper()
-                price = to_tick(bs_price(spot, strike, years, vol, opt))
-                greeks = bs_greeks(spot, strike, years, vol, opt)
+                price = to_tick(bs_price(spot, strike, years, RISK_FREE_RATE, vol, opt))
+                g = greeks(spot, strike, years, RISK_FREE_RATE, vol, opt)
                 oi = int(5_000_000 * round_bonus * math.exp(-((strike - centre) / (spot * 0.025)) ** 2)
                          * rng.uniform(0.7, 1.3)) + int(rng.integers(5_000, 50_000))
                 spread = max(TICK, to_tick(price * 0.002))
@@ -227,8 +227,8 @@ class DemoDataClient:
                     f"{side}_bid": max(TICK, round(price - spread, 2)), f"{side}_ask": round(price + spread, 2),
                     f"{side}_oi": oi, f"{side}_oi_change": int(oi * rng.uniform(-0.2, 0.3)),
                     f"{side}_volume": int(oi * rng.uniform(1, 6)), f"{side}_iv": round(vol * 100, 2),
-                    f"{side}_delta": round(greeks["delta"], 4), f"{side}_gamma": round(greeks["gamma"], 6),
-                    f"{side}_theta": round(greeks["theta"], 2), f"{side}_vega": round(greeks["vega"], 2),
+                    f"{side}_delta": round(g["delta"], 4), f"{side}_gamma": round(g["gamma"], 6),
+                    f"{side}_theta": round(g["theta"], 2), f"{side}_vega": round(g["vega"], 2),
                 })
             rows.append(row)
         return OptionChain(underlying, expiry, spot, pd.DataFrame(rows, columns=CHAIN_COLUMNS), self.source)
@@ -288,7 +288,8 @@ class DemoDataClient:
         if sec.kind == "option":
             years = [years_to_expiry(t.to_pydatetime(), sec.expiry) for t in times]
             vol = self._history_vol()
-            close = np.array([bs_price(s, sec.strike, y, smile_vol(vol, s, sec.strike), sec.option_type)
+            close = np.array([bs_price(s, sec.strike, y, RISK_FREE_RATE, smile_vol(vol, s, sec.strike),
+                                       sec.option_type)
                               for s, y in zip(under, years)])
         elif sec.kind == "future":
             years = np.array([years_to_expiry(t.to_pydatetime(), sec.expiry) for t in times])
@@ -333,7 +334,7 @@ class DemoDataClient:
             vol = smile_vol(self._history_vol(), s, k)
             strikes.append(float(k))
             ivs.append(round(vol * 100, 2))
-            closes.append(bs_price(s, k, years_to_expiry(t.to_pydatetime(), expiry), vol, opt))
+            closes.append(bs_price(s, k, years_to_expiry(t.to_pydatetime(), expiry), RISK_FREE_RATE, vol, opt))
         bars = self._bars(np.array(closes), rng, 0.002)
         df = pd.DataFrame({"timestamp": times, **{k: np.round(v, 2) for k, v in bars.items()}})
         df["volume"] = rng.integers(10_000, 2_000_000, len(df))

@@ -172,3 +172,52 @@ def get_snapshot(client: DhanDataClient | None = None) -> Snapshot:
         except Exception as err:
             log.warning("Dhan quotes failed (%s); using yfinance instead", err)
     return snapshot_from_yfinance(symbols, names)
+
+
+# ---------------- sector heatmap ----------------
+
+# Nifty sector indices on Yahoo Finance: (sector name, ticker)
+SECTOR_INDICES = [
+    ("Bank", "^NSEBANK"), ("IT", "^CNXIT"), ("Auto", "^CNXAUTO"), ("Pharma", "^CNXPHARMA"),
+    ("FMCG", "^CNXFMCG"), ("Metal", "^CNXMETAL"), ("Realty", "^CNXREALTY"),
+    ("Energy", "^CNXENERGY"), ("PSU Bank", "^CNXPSUBANK"), ("Media", "^CNXMEDIA"),
+]
+# How far back each heatmap period compares, in trading days
+WINDOWS = {"1 day": 1, "1 week": 5, "1 month": 21}
+
+
+# About three months of daily closes for the sector indices (tried again on errors).
+@retry
+def _sector_history() -> pd.DataFrame:
+    data = yf.download([t for _, t in SECTOR_INDICES], period="3mo", interval="1d", group_by="ticker",
+                       auto_adjust=False, progress=False, threads=True)
+    if data is None or data.empty:
+        raise ConnectionError("yfinance returned no sector data")
+    return data
+
+
+# % change of each sector over the chosen period; sectors without enough data are skipped and logged.
+def sector_changes(data: pd.DataFrame, window: str) -> tuple[pd.DataFrame, list[str]]:
+    """Returns (table with sector, ticker, last, pct_change; list of skipped sectors).
+    '1 week' = last close vs the close 5 trading days earlier; '1 month' = 21 trading days."""
+    back = WINDOWS[window]
+    rows, skipped = [], []
+    for sector, ticker in SECTOR_INDICES:
+        try:
+            close = data[ticker]["Close"].dropna()
+        except KeyError:
+            close = pd.Series(dtype=float)
+        if len(close) <= back:
+            skipped.append(sector)
+            log.warning("Sector heatmap: skipping %s (%s) - only %d closes, need %d",
+                        sector, ticker, len(close), back + 1)
+            continue
+        last, before = float(close.iloc[-1]), float(close.iloc[-1 - back])
+        rows.append({"sector": sector, "ticker": ticker, "last": last,
+                     "pct_change": (last / before - 1) * 100})
+    return pd.DataFrame(rows, columns=["sector", "ticker", "last", "pct_change"]), skipped
+
+
+# Fetch and compute the heatmap table for one period.
+def get_sector_heatmap(window: str = "1 day") -> tuple[pd.DataFrame, list[str]]:
+    return sector_changes(_sector_history(), window)
