@@ -1,12 +1,14 @@
-"""Tests for marketlens/ingest/dhan_master.py using a tiny fake Dhan instrument list."""
+"""Tests for marketlens/broker/dhan_instruments.py using a tiny fake Dhan instrument list."""
 import datetime as dt
 
 import pandas as pd
 import pytest
 from sqlalchemy import select
 
-from marketlens.ingest.dhan_master import (INDICES, find_stock, index_futures, prepare_master,
-                                           remember_security, search_stocks)
+from marketlens.broker.dhan_instruments import (INDICES, find_option, find_stock, index_futures,
+                                                lot_size, option_expiries, option_strikes,
+                                                prepare_master, remember_security, resolve,
+                                                search_stocks)
 from marketlens.models import Instrument
 
 TODAY = dt.date(2026, 10, 24)
@@ -27,6 +29,12 @@ ROWS = [
     ["NSE", "E", "2885", "EQUITY", "0", "RELIANCE", "1.0", "Reliance Industries", "", "", "", "10", "NA", "ES", "EQ", "RELIANCE INDUSTRIES LTD"],
     ["NSE", "E", "1333", "EQUITY", "0", "HDFCBANK", "1.0", "HDFC Bank", "", "", "", "10", "NA", "ES", "EQ", "HDFC BANK LTD"],
     ["NSE", "E", "99999", "EQUITY", "0", "HDFC2638DG", "1.0", "HDFC bond", "", "", "", "10", "NA", "ES", "N1", "HDFC BOND"],
+    ["NSE", "D", "40037", "OPTIDX", "0", "NIFTY-Nov2026-25000-CE", "65.0", "NIFTY 09 NOV 25000 CALL", "2026-11-09 14:30:00", "25000.00000", "CE", "5", "W", "OP", "", ""],
+    ["NSE", "D", "40038", "OPTIDX", "0", "NIFTY-Nov2026-25000-PE", "65.0", "NIFTY 09 NOV 25000 PUT", "2026-11-09 14:30:00", "25000.00000", "PE", "5", "W", "OP", "", ""],
+    ["NSE", "D", "40039", "OPTIDX", "0", "NIFTY-Nov2026-25050-CE", "65.0", "NIFTY 09 NOV 25050 CALL", "2026-11-09 14:30:00", "25050.00000", "CE", "5", "W", "OP", "", ""],
+    ["NSE", "D", "40100", "OPTIDX", "0", "NIFTY-Nov2026-25000-CE", "65.0", "NIFTY 03 NOV 25000 CALL", "2026-11-03 14:30:00", "25000.00000", "CE", "5", "W", "OP", "", ""],
+    ["BSE", "D", "1100742", "OPTIDX", "0", "SENSEX-Nov2026-70800-PE", "20.0", "SENSEX 26 NOV 70800 PUT", "2026-11-26 15:30:00", "70800.00000", "PE", "5", "M", "OPTIDX", "", "BSXOPT"],
+    ["NSE", "D", "106474", "OPTSTK", "0", "RELIANCE-Oct2026-720-CE", "500.0", "RELIANCE 27 OCT 720 CALL", "2026-10-27 14:30:00", "720.00000", "CE", "5", "M", "OP", "", ""],
 ]
 
 
@@ -91,3 +99,39 @@ def test_remember_security(db_session, master):
     assert fut.instrument_type == "FUTURES" and fut.expiry == dt.date(2026, 10, 27)
     assert remember_security(db_session, find_stock("RELIANCE", master)) == rid  # no duplicate
     assert db_session.scalar(select(Instrument.id).where(Instrument.symbol == "NIFTY-Oct2026-FUT")) == fid
+
+
+# Option expiries come nearest first; past expiries are left out.
+def test_option_expiries(master):
+    assert option_expiries("NIFTY", master, today=TODAY) == [dt.date(2026, 11, 3), dt.date(2026, 11, 9)]
+    assert option_expiries("SENSEX", master, today=TODAY) == [dt.date(2026, 11, 26)]
+
+
+# One option by strike, expiry and CE/PE, with its Security ID and lot size.
+def test_find_option(master):
+    ce = find_option("NIFTY", dt.date(2026, 11, 9), 25000, "ce", master)
+    assert ce.security_id == "40037" and ce.option_type == "CE" and ce.lot_size == 65
+    assert ce.kind == "option" and ce.segment == "NSE_FNO" and ce.strike == 25000
+    assert find_option("NIFTY", dt.date(2026, 11, 9), 25000, "PE", master).security_id == "40038"
+    assert find_option("SENSEX", dt.date(2026, 11, 26), 70800, "PE", master).segment == "BSE_FNO"
+    assert find_option("NIFTY", dt.date(2026, 11, 9), 99999, "CE", master) is None
+    with pytest.raises(ValueError):
+        find_option("NIFTY", dt.date(2026, 11, 9), 25000, "XX", master)
+
+
+# Strikes and lot sizes per underlying.
+def test_strikes_and_lot_sizes(master):
+    assert option_strikes("NIFTY", dt.date(2026, 11, 9), master) == [25000.0, 25050.0]
+    assert lot_size("NIFTY", master) == 65
+    assert lot_size("SENSEX", master) == 20
+    assert lot_size("RELIANCE", master) == 500
+    assert lot_size("HDFCBANK", master) is None   # no F&O in the fake list
+
+
+# resolve() understands index names, stocks, futures and options.
+def test_resolve(master):
+    assert resolve("nifty", master).security_id == "13"
+    assert resolve("RELIANCE", master).kind == "stock"
+    assert resolve("NIFTY-Nov2026-FUT", master).kind == "future"
+    assert resolve("NIFTY-Nov2026-25000-PE", master).security_id == "40038"
+    assert resolve("NOPE-Nov2026-FUT", master) is None

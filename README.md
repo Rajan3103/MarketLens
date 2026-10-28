@@ -182,8 +182,11 @@ MarketLens/
 │   ├── data.py            # downloads prices, adds moving averages
 │   ├── db.py              # PostgreSQL connection, sessions, upsert helper
 │   ├── models.py          # the 24 database tables
-│   ├── broker/dhan_client.py  # Dhan connection (dhanhq), retries, 5 requests/second
-│   ├── ingest/            # prices.py (yfinance daily), dhan_master.py (Security IDs), historical.py (Dhan candles)
+│   ├── broker/            # market_data.py: get_data_client() -> Dhan (keys set) or DEMO
+│   │                      # dhan_data.py (DhanDataClient), demo_data.py (DemoDataClient),
+│   │                      # dhan_instruments.py (Security IDs, lot sizes), dhan_client.py (keys, errors)
+│   ├── options/pricing.py # Black-Scholes prices and Greeks
+│   ├── ingest/            # prices.py (yfinance daily), historical.py (candle downloads)
 │   ├── costs.py           # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
 │   ├── utils.py           # @retry and RateLimiter helpers
 │   ├── logger.py          # writes messages to the terminal and logs/marketlens.log

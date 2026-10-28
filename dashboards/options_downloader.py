@@ -13,7 +13,7 @@ import streamlit as st
 from marketlens import config
 from marketlens.broker.dhan_client import has_keys
 from marketlens.data import get_history_range
-from marketlens.ingest.dhan_master import INDICES, find_stock, index_futures, search_stocks
+from marketlens.broker.dhan_instruments import INDICES, find_stock, index_futures, search_stocks
 from marketlens.ingest.historical import (TIMEFRAMES, csv_name, download_candles, is_demo,
                                           save_csv, save_to_db)
 from marketlens.ui import coming_soon, key_notice

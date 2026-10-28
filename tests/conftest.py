@@ -19,6 +19,17 @@ from marketlens.db import (alembic_config, connection_status, ensure_database_ex
                            get_engine, get_session, to_psycopg_url)
 
 
+# Tests never use the internet: a real yfinance download fails at once
+# (tests that need prices put in their own fake, like FakeYahoo in test_prices.py).
+@pytest.fixture(autouse=True)
+def no_internet_prices(monkeypatch):
+    import yfinance
+
+    def blocked(*args, **kwargs):
+        raise ConnectionError("Tests must not download real prices (use a fake instead).")
+    monkeypatch.setattr(yfinance, "download", blocked)
+
+
 # Connect to TEST_DATABASE_URL and build the tables with Alembic, or skip with a reason.
 @pytest.fixture(scope="session")
 def db_url():

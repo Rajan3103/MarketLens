@@ -1,7 +1,7 @@
-"""Tests for marketlens/ingest/historical.py and broker/dhan_client.py.
+"""Tests for marketlens/ingest/historical.py, broker/dhan_client.py and DhanDataClient candles.
 
-A FakeDhan stands in for the real dhanhq client: it records every request and
-answers with made-up candles, so no internet and no Dhan key are needed.
+A FakeDhan stands in for the real dhanhq library inside DhanDataClient: it records
+every request and answers with made-up candles, so no internet and no Dhan key are needed.
 """
 import datetime as dt
 
@@ -10,11 +10,13 @@ import pytest
 from sqlalchemy import func, select
 
 from marketlens import config, utils
-from marketlens.broker import dhan_client
+from marketlens.broker import dhan_data
+from marketlens.broker.demo_data import DemoDataClient
 from marketlens.broker.dhan_client import DhanError, DhanTemporaryError, unwrap
+from marketlens.broker.dhan_data import DhanDataClient
+from marketlens.broker.dhan_instruments import INDICES, Security
 from marketlens.ingest import historical
-from marketlens.ingest.dhan_master import INDICES, Security
-from marketlens.ingest.historical import (IST, check_range, csv_name, date_chunks, demo_candles,
+from marketlens.ingest.historical import (IST, check_range, csv_name, date_chunks,
                                           download_candles, is_demo, resolve_folder, save_csv,
                                           save_to_db, timeframe_minutes, to_frame)
 from marketlens.models import PriceBar
@@ -59,7 +61,7 @@ class FakeDhan:
 @pytest.fixture(autouse=True)
 def no_waiting(monkeypatch):
     monkeypatch.setattr(utils.time, "sleep", lambda s: None)
-    monkeypatch.setattr(dhan_client.DATA_LIMITER, "_sleep", lambda s: None)
+    monkeypatch.setattr(dhan_data.DATA_LIMITER, "_sleep", lambda s: None)
 
 
 # ---- timeframes and dates ----
@@ -73,12 +75,12 @@ def test_timeframes():
 
 # Pieces are at most 90 days, with no gaps and no overlaps.
 def test_date_chunks():
-    chunks = date_chunks(dt.date(2026, 1, 1), dt.date(2026, 4, 30))
+    chunks = date_chunks(dt.date(2026, 1, 1), dt.date(2026, 4, 30), 90)
     assert chunks == [(dt.date(2026, 1, 1), dt.date(2026, 3, 31)), (dt.date(2026, 4, 1), dt.date(2026, 4, 30))]
-    long = date_chunks(dt.date(2022, 1, 1), dt.date(2026, 10, 24))
+    long = date_chunks(dt.date(2022, 1, 1), dt.date(2026, 10, 24), 90)
     assert all((b - a).days + 1 <= 90 for a, b in long)
     assert all(long[i][1] + dt.timedelta(days=1) == long[i + 1][0] for i in range(len(long) - 1))
-    assert date_chunks(dt.date(2026, 5, 5), dt.date(2026, 5, 5)) == [(dt.date(2026, 5, 5), dt.date(2026, 5, 5))]
+    assert date_chunks(dt.date(2026, 5, 5), dt.date(2026, 5, 5), 90) == [(dt.date(2026, 5, 5), dt.date(2026, 5, 5))]
 
 
 # Impossible ranges get a friendly message.
@@ -120,7 +122,8 @@ def test_intraday_download_is_chunked():
     fake = FakeDhan()
     start, end = TODAY - dt.timedelta(days=119), TODAY
     done = []
-    df = download_candles(NIFTY, start, end, "5 min", dhan=fake, progress=lambda d, t: done.append((d, t)))
+    df = download_candles(NIFTY, start, end, "5 min", client=DhanDataClient(fake),
+                          progress=lambda d, t: done.append((d, t)))
     assert [c[0] for c in fake.calls] == ["intraday", "intraday"]
     assert all(c[3] == 5 for c in fake.calls)
     assert fake.calls[0][1] == start.isoformat()
@@ -133,14 +136,16 @@ def test_intraday_download_is_chunked():
 # Daily candles need just one request, even for many years.
 def test_daily_download_one_request():
     fake = FakeDhan()
-    download_candles(FUT, TODAY - dt.timedelta(days=700), TODAY, "1 day", dhan=fake)
+    download_candles(FUT, TODAY - dt.timedelta(days=700), TODAY, "1 day", client=DhanDataClient(fake))
     assert len(fake.calls) == 1 and fake.calls[0][0] == "daily"
 
 
 # No keys + DEMO_MODE on -> DEMO candles; DEMO_MODE off -> clear "key not set" error.
 def test_without_keys(monkeypatch):
-    monkeypatch.setattr(historical, "get_dhan", lambda: None)
+    monkeypatch.setattr(dhan_data, "has_keys", lambda: False)
     monkeypatch.setattr(config, "DEMO_MODE", True)
+    monkeypatch.setattr(DemoDataClient, "spot", lambda self, symbol: 25000.0)  # no internet
+    monkeypatch.setattr(DemoDataClient, "vol", lambda self: 0.14)
     df = download_candles(NIFTY, TODAY - dt.timedelta(days=10), TODAY, "15 min")
     assert is_demo(df) and (df["source"] == "DEMO").all()
     monkeypatch.setattr(config, "DEMO_MODE", False)
@@ -152,13 +157,14 @@ def test_without_keys(monkeypatch):
 @pytest.mark.parametrize("minutes, per_day", [(1, 375), (5, 75), (15, 25), (25, 15), (60, 7)])
 def test_demo_candles(minutes, per_day):
     start, end = dt.date(2026, 10, 19), dt.date(2026, 10, 25)  # Mon..Sun
-    df = demo_candles(NIFTY, start, end, minutes)
+    demo = DemoDataClient(spots={"NIFTY": 25000}, vix=14)
+    df = demo.get_candles(NIFTY, start, end, minutes)
     assert len(df) == 5 * per_day
     times = df["timestamp"].dt.time
     assert times.min() == dt.time(9, 15) and times.max() < dt.time(15, 30)
     assert (df["high"] >= df[["open", "close"]].max(axis=1)).all()
     assert (df["low"] <= df[["open", "close"]].min(axis=1)).all()
-    assert df.equals(demo_candles(NIFTY, start, end, minutes))
+    assert df.equals(demo.get_candles(NIFTY, start, end, minutes))
 
 
 # ---- saving ----
@@ -173,7 +179,7 @@ def test_csv_name():
 
 # The CSV lands in the chosen folder (created if missing) with IST times.
 def test_save_csv(tmp_path):
-    df = download_candles(NIFTY, TODAY - dt.timedelta(days=6), TODAY, "60 min", dhan=FakeDhan())
+    df = download_candles(NIFTY, TODAY - dt.timedelta(days=6), TODAY, "60 min", client=DhanDataClient(FakeDhan()))
     path = save_csv(df, tmp_path / "new" / "folder", "x.csv")
     assert path.exists()
     back = pd.read_csv(path)
@@ -185,7 +191,7 @@ def test_save_csv(tmp_path):
 # Real candles go into price_bars; the same download again adds no duplicates.
 def test_save_to_db_no_duplicates(db_url, db_session):
     fake = FakeDhan()
-    df = download_candles(FUT, TODAY - dt.timedelta(days=13), TODAY, "5 min", dhan=fake)
+    df = download_candles(FUT, TODAY - dt.timedelta(days=13), TODAY, "5 min", client=DhanDataClient(fake))
     assert save_to_db(df, FUT, "5 min", url=db_url) == len(df)
     save_to_db(df, FUT, "5 min", url=db_url)
     assert db_session.scalar(select(func.count()).select_from(PriceBar)) == len(df)
@@ -196,6 +202,7 @@ def test_save_to_db_no_duplicates(db_url, db_session):
 
 # DEMO candles are refused by the database.
 def test_demo_not_saved(db_url):
-    df = demo_candles(NIFTY, dt.date(2026, 10, 19), dt.date(2026, 10, 19), 60)
+    df = DemoDataClient(spots={"NIFTY": 25000}, vix=14).get_candles(NIFTY, dt.date(2026, 10, 19),
+                                                                    dt.date(2026, 10, 19), 60)
     with pytest.raises(ValueError, match="DEMO"):
         save_to_db(df, NIFTY, "60 min", url=db_url)
