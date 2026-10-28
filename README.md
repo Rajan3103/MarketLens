@@ -124,18 +124,20 @@ close each day. The stock lists live in `data/universe/` (`nifty50.csv`,
 python scripts/update_universe.py
 ```
 
-### 7. Download intraday candles from Dhan (module 3)
+### 7. The data downloader page (module 3)
 
-Open **3. Historical Data Downloader** in the app. Tabs **Index** (NIFTY, BANKNIFTY,
-FINNIFTY, SENSEX), **Index futures** (live current / next / far month contracts) and
-**Stocks** show the instrument's Dhan **Security ID**. Choose From date, To date,
-timeframe (**1, 5, 15, 25, 60 min or 1 day**) and a download folder, then click **Download**:
-the candles are saved as a CSV in that folder and in PostgreSQL (`price_bars`).
+Open **3. Historical Data Downloader** in the app:
 
-- Intraday: last 5 years only; long ranges are fetched in 90-day pieces automatically.
-- Futures: history starts when that contract was listed (Dhan only lists live contracts).
-- Without Dhan keys the page makes clearly labelled **DEMO** candles (`DEMO_...csv`),
-  which are never saved to the database.
+| Tab | What it does |
+| --- | --- |
+| **Latest option chain** | Underlying + expiry: chain with OI, IV, Greeks, PCR. *Save snapshot* stores it; CSV / Excel download |
+| **Expired options** | Date range, weekly/monthly, strikes ATM±n, CE/PE: *Download and store* (1-minute bars, progress bar, resumable). Preview any stored day at 1/5/15/25/60 min and export it (or the whole range) as CSV / Excel. **Feeds the Options Backtester and Option Simulator** |
+| **Stocks, ETFs & indices** | One ticker, a list or a whole universe (Nifty 50 / 200 / ETFs): free daily prices from yfinance, stored, charted, exported |
+| **Intraday candles (Dhan)** | Index / futures / stock candles by Security ID (1, 5, 15, 25, 60 min or daily) into a folder you choose |
+
+Below the tabs, **What is stored** lists every instrument with its first date, last date,
+row count and whether it is DEMO data. Without Dhan keys the option and Dhan tabs use
+clearly labelled DEMO data.
 
 ### 8. Download option data (for the backtester and simulator)
 

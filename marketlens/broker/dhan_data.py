@@ -36,7 +36,8 @@ OPTION_SIDES = {"CE": "CALL", "PE": "PUT", "CALL": "CALL", "PUT": "PUT"}
 CHAIN_FIELDS = ["security_id", "ltp", "bid", "ask", "oi", "oi_change", "volume", "iv",
                 "delta", "gamma", "theta", "vega"]
 CHAIN_COLUMNS = ["strike"] + [f"ce_{f}" for f in CHAIN_FIELDS] + [f"pe_{f}" for f in CHAIN_FIELDS]
-QUOTE_COLUMNS = ["symbol", "security_id", "ltp", "open", "high", "low", "close", "volume", "source"]
+# close = previous day's close; change = ltp - previous close (Dhan's "net_change")
+QUOTE_COLUMNS = ["symbol", "security_id", "ltp", "open", "high", "low", "close", "change", "volume", "source"]
 
 
 @dataclass
@@ -121,10 +122,13 @@ def parse_quotes(data: dict, names: dict) -> pd.DataFrame:
     for segment, items in (data or {}).items():
         for sid, q in (items or {}).items():
             ohlc = q.get("ohlc") or {}
+            ltp, change = q.get("last_price"), q.get("net_change")
+            prev = (ltp - change) if ltp is not None and change is not None else ohlc.get("close")
             rows.append({"symbol": names.get((segment, str(sid)), str(sid)), "security_id": str(sid),
-                         "ltp": q.get("last_price"), "open": ohlc.get("open"), "high": ohlc.get("high"),
-                         "low": ohlc.get("low"), "close": ohlc.get("close"), "volume": q.get("volume"),
-                         "source": "DHAN"})
+                         "ltp": ltp, "open": ohlc.get("open"), "high": ohlc.get("high"),
+                         "low": ohlc.get("low"), "close": prev,
+                         "change": change if change is not None else (ltp - prev if ltp and prev else None),
+                         "volume": q.get("volume"), "source": "DHAN"})
     return pd.DataFrame(rows, columns=QUOTE_COLUMNS)
 
 

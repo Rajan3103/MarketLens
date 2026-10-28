@@ -202,11 +202,12 @@ def _sync_batch(session, symbols: list[str], ids: dict, start: dt.date, end: dt.
 # Bring the database up to date for these symbols between start and end.
 def sync_prices(symbols: list[str], start: dt.date, end: dt.date | None = None,
                 instrument_type: str = "EQUITY", names: dict | None = None,
-                url: str | None = None) -> SyncSummary:
+                url: str | None = None, progress=None) -> SyncSummary:
     """1. adds missing instruments   2. finds each one's last stored date
     3. downloads only the missing dates (yfinance, .NS)   4. upserts   5. logs a summary.
 
     url: another database (the tests use TEST_DATABASE_URL); normally leave it empty.
+    progress: optional function(done, total, text) for a progress bar (one step per 50 symbols).
     """
     end = end or dt.date.today()
     symbols = list(dict.fromkeys(s.strip().upper() for s in symbols if s.strip()))
@@ -225,9 +226,12 @@ def sync_prices(symbols: list[str], start: dt.date, end: dt.date | None = None,
                 continue
             groups.setdefault(first, []).append(symbol)
 
-        for first, group in sorted(groups.items()):
-            for i in range(0, len(group), BATCH_SIZE):
-                _sync_batch(session, group[i:i + BATCH_SIZE], ids, first, end, stored, start, summary)
+        batches = [(first, group[i:i + BATCH_SIZE]) for first, group in sorted(groups.items())
+                   for i in range(0, len(group), BATCH_SIZE)]
+        for n, (first, batch) in enumerate(batches, start=1):
+            _sync_batch(session, batch, ids, first, end, stored, start, summary)
+            if progress:
+                progress(n, len(batches), f"batch {n} of {len(batches)}")
 
     log.info("Price sync %s to %s: %s", start, end, summary)
     return summary

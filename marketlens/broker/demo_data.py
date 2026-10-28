@@ -181,6 +181,7 @@ class DemoDataClient:
             rows.append({"symbol": sec.symbol, "security_id": sec.security_id, "ltp": round(spot, 2),
                          "open": round(prev, 2), "high": round(max(prev, spot) + day_move / 2, 2),
                          "low": round(min(prev, spot) - day_move / 2, 2), "close": round(prev, 2),
+                         "change": round(spot - prev, 2),
                          "volume": int(rng.integers(100_000, 5_000_000)), "source": self.source})
         return pd.DataFrame(rows, columns=QUOTE_COLUMNS)
 

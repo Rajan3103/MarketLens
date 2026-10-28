@@ -13,7 +13,7 @@ Welcome! Pick a dashboard from the menu on the left.
 | --- | --- | --- | --- | --- |
 | **Market & data** | 1 | Live Market Overview | Nifty, Bank Nifty and VIX cards; price charts with moving averages | ✅ |
 | | 2 | Option Chain & Strategy Builder | Live option chain; build strategies and see their payoff | 🛠️ payoff builder ready |
-| | 3 | Historical Data Downloader | Index, index futures and stock candles from Dhan (1/5/15/25/60 min, daily) by Security ID; expired options; free daily prices | 🛠️ Dhan downloads ready (DEMO without keys) |
+| | 3 | Historical Data Downloader | Option chain snapshots, expired options (1-min, ATM±10), stocks/ETFs/indices daily, Dhan intraday candles; what is stored | ✅ (DEMO without Dhan keys) |
 | **Options testing** | 4 | Options Backtester | Test option strategies on past data | 📋 |
 | | 5 | Option Simulator | Replay a past day and practise trading it | 📋 |
 | | 6 | Forward Test / Paper Trading | Run a strategy live with virtual money | 📋 |

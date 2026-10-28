@@ -10,5 +10,6 @@ SQLAlchemy>=2.0.30   # talks to the PostgreSQL database from Python
 psycopg[binary]>=3.2 # PostgreSQL driver (psycopg 3); [binary] = no compiler needed on Windows
 alembic>=1.13        # database migrations: creates and updates the tables
 dhanhq>=2.3          # official Dhan API library: historical candles, option chain, orders
+openpyxl>=3.1        # writes Excel (.xlsx) files for the download buttons
 tzdata>=2024.1       # time zone data (Asia/Kolkata) for Windows, which has none built in
 pytest>=8.0          # runs the automatic tests in the tests/ folder

@@ -165,6 +165,12 @@ def download_expired_options(underlying: str, start: dt.date, end: dt.date,
     Skips days already stored; safe to stop and run again."""
     underlying = underlying.upper()
     flag = expiries.WEEK if expiry_flag.lower() == "weekly" else expiries.MONTH
+    if end < start:
+        raise ValueError("'To date' is before 'From date'.")
+    if flag == expiries.WEEK and not (expiries.has_weekly(underlying, start)
+                                      and expiries.has_weekly(underlying, end)):
+        raise ValueError(f"{underlying} did not have weekly options for the whole period "
+                         f"{start:%d-%b-%Y} to {end:%d-%b-%Y}; choose monthly.")
     strikes = strikes or strike_labels()
     client = _client(client)
     summary = {"source": client.source, "pieces": 0, "rows": 0, "skipped_days": 0, "series": 0}
@@ -354,3 +360,45 @@ def load_option_day(underlying: str, day: dt.date, expiry: dt.date | None = None
     df.attrs.update({"underlying": underlying, "day": day, "expiry": expiry,
                      "is_demo": bool(df["is_demo"].any())})
     return df
+
+
+# Days between start and end that have stored option minute bars.
+def stored_days(underlying: str, start: dt.date, end: dt.date, url: str | None = None) -> list[dt.date]:
+    first, _ = _day_bounds(start)
+    _, last = _day_bounds(end)
+    with get_session(url) as session:
+        times = session.scalars(
+            select(func.date_trunc("day", IntradayOptionPrice.ts)).distinct()
+            .join(OptionContract, OptionContract.id == IntradayOptionPrice.contract_id)
+            .join(Instrument, Instrument.id == OptionContract.underlying_id)
+            .where(Instrument.symbol == underlying.upper(), IntradayOptionPrice.ts >= first,
+                   IntradayOptionPrice.ts < last))
+        return sorted({t.astimezone(IST).date() for t in times})
+
+
+# Every stored day between start and end (nearest expiry each day), as one table.
+def load_option_range(underlying: str, start: dt.date, end: dt.date,
+                      url: str | None = None) -> pd.DataFrame:
+    """Same columns as load_option_day, plus 'expiry'. Used for exports."""
+    days = [load_option_day(underlying, d, url=url) for d in stored_days(underlying, start, end, url)]
+    days = [d.assign(expiry=d.attrs["expiry"]) for d in days if not d.empty]
+    return pd.concat(days, ignore_index=True) if days else pd.DataFrame()
+
+
+# Turn 1-minute option bars into 5/15/25/60-minute bars (per strike and CE/PE).
+def resample_option_bars(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
+    """Candles start at 09:15 like the exchange's: open = first, high = max, low = min,
+    close = last, volume = sum; OI, IV and spot = their last value in the candle."""
+    if minutes == 1 or df.empty:
+        return df
+    df = df.copy()
+    session_start = df["ts"].dt.normalize() + pd.Timedelta(hours=9, minutes=15)
+    offset = ((df["ts"] - session_start).dt.total_seconds() // 60 // minutes) * minutes
+    df["ts"] = session_start + pd.to_timedelta(offset, unit="min")
+    keys = ["ts", "strike", "option_type"] + (["expiry"] if "expiry" in df.columns else [])
+    rules = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum",
+             "oi": "last", "iv": "last", "spot": "last", "is_demo": "max"}
+    rules = {k: v for k, v in rules.items() if k in df.columns}
+    out = df.sort_values("ts").groupby(keys, as_index=False, sort=True).agg(rules)
+    return out[[c for c in df.columns if c in out.columns]].sort_values(["ts", "strike", "option_type"]) \
+        .reset_index(drop=True)

@@ -180,3 +180,12 @@ def test_load_prices(db_url, db_session, fake_yahoo):
     assert closes.loc["2026-01-05", "AAA"] == 104.0    # 100 + day 4
     assert isinstance(closes.index, pd.DatetimeIndex)
     assert load_prices(["AAA"], dt.date(2030, 1, 1), url=db_url).empty
+
+
+# sync_prices reports progress once per batch of symbols (for the page's progress bar).
+def test_sync_progress(db_url, db_session, fake_yahoo):
+    fake_yahoo(base={"AAA.NS": 100, "BBB.NS": 200})
+    steps = []
+    sync_prices(["AAA", "BBB"], START, dt.date(2026, 1, 9), url=db_url,
+                progress=lambda done, total, text: steps.append((done, total)))
+    assert steps == [(1, 1)]
