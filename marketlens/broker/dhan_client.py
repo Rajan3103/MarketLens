@@ -1,17 +1,13 @@
-"""Connection to Dhan through the official dhanhq library.
+"""Connection to Dhan through the official dhanhq library: keys, client and error checks.
 
-Every other file gets Dhan from here, so keys, retries and speed limits are
-handled in one place. Without keys in .env, get_dhan() returns None and the
-pages fall back to clearly labelled DEMO data.
+The data calls themselves live in dhan_data.py (DhanDataClient). Without keys
+in .env, get_dhan() returns None and market_data.get_data_client() hands out
+the DEMO client instead.
 """
 from marketlens import config
 from marketlens.logger import get_logger
-from marketlens.utils import RateLimiter, retry
 
 log = get_logger(__name__)
-
-# Dhan allows a limited number of data requests per second; stay at 5
-DATA_LIMITER = RateLimiter(5)
 
 # Dhan error codes that mean "try again later" (too many requests / busy)
 TEMPORARY_CODES = {"DH-904", "805", "DH-908"}
@@ -57,24 +53,3 @@ def unwrap(response: dict) -> dict:
         raise DhanError(f"Dhan error: {message}")
     # A plain text remark means the request never reached Dhan (network problem)
     raise DhanTemporaryError(f"Could not reach Dhan: {remarks}")
-
-
-# One daily-candle request (tried again on network errors / rate limits).
-@retry(exceptions=(DhanTemporaryError,))
-def fetch_daily(dhan, security_id: str, segment: str, instrument: str,
-                from_date: str, to_date: str) -> dict:
-    """Dates as YYYY-MM-DD. Dhan does NOT include to_date in the answer."""
-    with DATA_LIMITER:
-        return unwrap(dhan.historical_daily_data(security_id, segment, instrument,
-                                                 from_date, to_date, oi=instrument.startswith("FUT")))
-
-
-# One intraday-candle request (tried again on network errors / rate limits).
-@retry(exceptions=(DhanTemporaryError,))
-def fetch_intraday(dhan, security_id: str, segment: str, instrument: str,
-                   from_date: str, to_date: str, interval: int) -> dict:
-    """interval: 1, 5, 15, 25 or 60 minutes. At most 90 days per request."""
-    with DATA_LIMITER:
-        return unwrap(dhan.intraday_minute_data(security_id, segment, instrument, from_date,
-                                                to_date, interval=interval,
-                                                oi=instrument.startswith("FUT")))

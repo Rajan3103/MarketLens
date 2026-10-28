@@ -1,13 +1,15 @@
-"""Security IDs: Dhan needs one for every download.
+"""Security IDs and lot sizes: Dhan needs a Security ID for every request.
 
-Dhan publishes one big CSV (the "scrip master", about 2 lakh rows) listing every
-instrument with its Security ID. We download it at most once a day into
-data/dhan/scrip_master.csv and look things up in it.
+Dhan publishes one big public CSV (the "instrument master", about 2 lakh rows)
+listing every instrument with its Security ID and lot size. We download it at
+most once a day into data/dhan/scrip_master.csv and look things up in it.
 
-    from marketlens.ingest.dhan_master import INDICES, index_futures, find_stock
-    INDICES["NIFTY"].security_id      -> "13"
-    index_futures("NIFTY")[0]         -> current-month NIFTY futures contract
-    find_stock("RELIANCE").security_id -> "2885"
+    from marketlens.broker.dhan_instruments import INDICES, index_futures, find_stock, find_option
+    INDICES["NIFTY"].security_id                 -> "13"
+    index_futures("NIFTY")[0]                    -> current-month NIFTY futures contract
+    find_stock("RELIANCE").security_id           -> "2885"
+    find_option("NIFTY", expiry, 25000, "CE")    -> that option, with Security ID and lot size
+    lot_size("NIFTY")                            -> 65
 """
 import datetime as dt
 import urllib.request
@@ -33,9 +35,11 @@ COLUMNS = {
     "SEM_SMST_SECURITY_ID": "security_id", "SEM_INSTRUMENT_NAME": "instrument",
     "SEM_TRADING_SYMBOL": "symbol", "SEM_LOT_UNITS": "lot_size", "SEM_CUSTOM_SYMBOL": "display_name",
     "SEM_EXPIRY_DATE": "expiry", "SEM_SERIES": "series", "SM_SYMBOL_NAME": "name",
+    "SEM_STRIKE_PRICE": "strike", "SEM_OPTION_TYPE": "option_type",
 }
-# Which index futures trade on which exchange
+# Which index futures and options trade on which exchange
 FUTURES_EXCHANGE = {"NIFTY": "NSE", "BANKNIFTY": "NSE", "FINNIFTY": "NSE", "SENSEX": "BSE"}
+OPTION_TYPES = ("CE", "PE")
 MONTH_LABELS = ["Current", "Next", "Far"]
 # Normal share series on NSE (others are bonds, rights, etc.)
 STOCK_SERIES = ("EQ", "BE")
@@ -47,13 +51,16 @@ class Security:
     symbol: str          # NIFTY, RELIANCE, NIFTY-Nov2026-FUT
     security_id: str     # Dhan's id, e.g. "13"
     segment: str         # IDX_I, NSE_EQ, NSE_FNO or BSE_FNO
-    instrument: str      # INDEX, EQUITY or FUTIDX
+    instrument: str      # INDEX, EQUITY, FUTIDX, OPTIDX or OPTSTK
     exchange: str        # NSE or BSE
-    kind: str            # index, stock or future
+    kind: str            # index, stock, future or option
     name: str = ""
     expiry: dt.date | None = None
     lot_size: int = 1
     label: str = ""      # e.g. "Current month" for futures
+    strike: float | None = None        # options only
+    option_type: str | None = None     # options only: CE (call) or PE (put)
+    underlying: str = ""               # futures/options: NIFTY, RELIANCE ...
 
     # Text shown in the page's dropdowns.
     def describe(self) -> str:
@@ -89,9 +96,12 @@ def prepare_master(raw: pd.DataFrame) -> pd.DataFrame:
     lot_size, display_name, expiry (date), series, name."""
     df = raw.rename(columns=COLUMNS)[list(COLUMNS.values())].copy()
     for col in ("exchange", "segment_code", "security_id", "instrument", "symbol", "series", "name",
-                "display_name"):
+                "display_name", "option_type"):
         df[col] = df[col].fillna("").astype(str).str.strip()
     df["lot_size"] = pd.to_numeric(df["lot_size"], errors="coerce").fillna(1).astype(int)
+    df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
+    # Underlying = text before the first "-": NIFTY-Nov2026-25000-CE -> NIFTY
+    df["underlying"] = df["symbol"].str.split("-").str[0]
     # Only the date part (2026-10-27 14:30:00 -> 2026-10-27) in one fixed format, so pandas
     # never guesses the format from an odd first row like 0001-01-01 (that becomes empty)
     df["expiry"] = pd.to_datetime(df["expiry"].fillna("").str[:10], format="%Y-%m-%d",
@@ -137,7 +147,7 @@ def index_futures(index: str, master: pd.DataFrame | None = None,
         label = MONTH_LABELS[i] if i < len(MONTH_LABELS) else f"Month {i + 1}"
         contracts.append(Security(row.symbol, row.security_id, f"{exchange}_FNO", "FUTIDX", exchange,
                                   "future", row.display_name, row.expiry, row.lot_size,
-                                  f"{label} month"))
+                                  f"{label} month", underlying=index))
     return contracts
 
 
@@ -169,10 +179,92 @@ def search_stocks(text: str, master: pd.DataFrame | None = None, limit: int = 20
     return symbols[:limit]
 
 
+# Rows of all live options for one underlying (index or stock).
+def _options(underlying: str, master: pd.DataFrame) -> pd.DataFrame:
+    """NIFTY/BANKNIFTY/FINNIFTY/SENSEX -> OPTIDX rows; stocks -> OPTSTK rows."""
+    underlying = underlying.strip().upper()
+    exchange = FUTURES_EXCHANGE.get(underlying, "NSE")
+    kind = "OPTIDX" if underlying in FUTURES_EXCHANGE else "OPTSTK"
+    return master[(master["exchange"] == exchange) & (master["instrument"] == kind)
+                  & (master["underlying"] == underlying)]
+
+
+# All live option expiry dates of one underlying, nearest first.
+def option_expiries(underlying: str, master: pd.DataFrame | None = None,
+                    today: dt.date | None = None) -> list[dt.date]:
+    """NIFTY -> weekly Tuesdays (moved earlier before holidays); SENSEX -> weekly Thursdays."""
+    master = load_master() if master is None else master
+    today = today or dt.date.today()
+    expiries = _options(underlying, master)["expiry"].dropna()
+    return sorted(e for e in set(expiries) if e >= today)
+
+
+# Find one option by underlying, expiry, strike and CE/PE.
+def find_option(underlying: str, expiry: dt.date, strike: float, option_type: str,
+                master: pd.DataFrame | None = None) -> Security | None:
+    """find_option("NIFTY", date(2026, 11, 9), 25000, "CE") -> NIFTY 09 NOV 25000 CALL. None if not listed."""
+    option_type = option_type.strip().upper()
+    if option_type not in OPTION_TYPES:
+        raise ValueError("option_type must be CE (call) or PE (put)")
+    master = load_master() if master is None else master
+    rows = _options(underlying, master)
+    rows = rows[(rows["expiry"] == expiry) & (rows["option_type"] == option_type)
+                & ((rows["strike"] - float(strike)).abs() < 0.01)]
+    if rows.empty:
+        return None
+    row = rows.iloc[0]
+    exchange = row["exchange"]
+    return Security(row["symbol"], row["security_id"], f"{exchange}_FNO", row["instrument"], exchange,
+                    "option", row["display_name"], row["expiry"], int(row["lot_size"]),
+                    strike=float(row["strike"]), option_type=option_type,
+                    underlying=underlying.strip().upper())
+
+
+# All strikes listed for one underlying and expiry, lowest first.
+def option_strikes(underlying: str, expiry: dt.date, master: pd.DataFrame | None = None) -> list[float]:
+    """Used to build an option chain around the spot price."""
+    master = load_master() if master is None else master
+    rows = _options(underlying, master)
+    return sorted(set(rows[rows["expiry"] == expiry]["strike"].dropna().astype(float)))
+
+
+# Lot size of an index or stock's F&O contracts (from its nearest options).
+def lot_size(underlying: str, master: pd.DataFrame | None = None) -> int | None:
+    """lot_size("NIFTY") -> 65. None when the symbol has no F&O contracts."""
+    master = load_master() if master is None else master
+    rows = _options(underlying, master).sort_values("expiry")
+    return int(rows["lot_size"].iloc[0]) if not rows.empty else None
+
+
+# Turn a name into a Security: index name, futures/option symbol or stock symbol.
+def resolve(symbol: str, master: pd.DataFrame | None = None) -> Security | None:
+    """"NIFTY" -> index; "RELIANCE" -> stock; "NIFTY-Nov2026-FUT" -> future;
+    "NIFTY-Nov2026-25000-CE" -> option. None if Dhan does not list it."""
+    symbol = symbol.strip().upper()
+    if symbol in INDICES:
+        return INDICES[symbol]
+    if "-" not in symbol:
+        return find_stock(symbol, master)
+    master = load_master() if master is None else master
+    rows = master[master["symbol"].str.upper() == symbol]
+    if rows.empty:
+        return None
+    row = rows.iloc[0]
+    if row["instrument"].startswith("FUT"):
+        return Security(row["symbol"], row["security_id"], f"{row['exchange']}_FNO", row["instrument"],
+                        row["exchange"], "future", row["display_name"], row["expiry"],
+                        int(row["lot_size"]), underlying=row["underlying"])
+    if row["instrument"].startswith("OPT"):
+        return find_option(row["underlying"], row["expiry"], row["strike"], row["option_type"], master)
+    return None
+
+
 # Save the Security ID in the instruments table; return the instrument's id.
 def remember_security(session, sec: Security) -> int:
     """Adds the instrument if it is new; otherwise only fills in the Dhan details
     (so an existing ETF stays an ETF)."""
+    if sec.kind not in ("index", "stock", "future"):
+        raise ValueError("Options are stored in option_contracts, not instruments.")
     kind = {"index": "INDEX", "stock": "EQUITY", "future": "FUTURES"}[sec.kind]
     found = session.scalar(select(Instrument.id).where(Instrument.symbol == sec.symbol,
                                                        Instrument.exchange == sec.exchange))

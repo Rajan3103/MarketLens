@@ -147,3 +147,10 @@ def test_timestamps_are_ist(db_url):
         assert conn.execute(text("SHOW timezone")).scalar() == "Asia/Kolkata"
         now = conn.execute(text("SELECT now()")).scalar()
     assert now.utcoffset() == dt.timedelta(hours=5, minutes=30)
+
+
+# The CHANGE_ME placeholder from .env.example gets a clear message, without trying to connect.
+def test_placeholder_password_is_explained():
+    from marketlens.db import connection_status
+    ok, message = connection_status("postgresql+psycopg://marketlens:CHANGE_ME@localhost:5432/marketlens")
+    assert not ok and "CHANGE_ME" in message

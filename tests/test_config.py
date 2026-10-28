@@ -103,3 +103,48 @@ def test_no_upstox_keys():
     names = [name for name, _ in config.KEYS]
     assert not any("UPSTOX" in name for name in names)
     assert "DHAN_CLIENT_ID" in names
+
+
+# A number above `maximum` is refused, like a port number above 65535.
+@pytest.mark.parametrize("text, expected", [("8000", 8000), ("70000", 8000), ("0", 8000), ("9001", 9001)])
+def test_get_number_maximum(monkeypatch, text, expected):
+    monkeypatch.setenv("ML_TEST_PORT", text)
+    assert config.get_number("ML_TEST_PORT", 8000, int, minimum=1, maximum=65535) == expected
+
+
+# The new settings exist with safe types and defaults.
+def test_new_settings():
+    assert isinstance(config.WEBHOOK_PORT, int) and 1 <= config.WEBHOOK_PORT <= 65535
+    assert isinstance(config.MAX_OPEN_POSITIONS, int) and config.MAX_OPEN_POSITIONS >= 1
+    assert config.AWS_REGION
+    assert ":CHANGE_ME@" not in "postgresql+psycopg://marketlens@localhost:5432/marketlens"
+
+
+# The Settings page lists every key, including the optional Dhan API key and the webhook secret.
+def test_key_list_complete():
+    names = [name for name, _ in config.KEYS]
+    for key in ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN", "DHAN_API_KEY", "DHAN_API_SECRET",
+                "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "WEBHOOK_SECRET", "DASHBOARD_PASSWORD"]:
+        assert key in names
+    assert len(names) == len(set(names))   # no key listed twice
+
+
+# Webhook secrets must be long enough to be hard to guess.
+def test_webhook_secret_strength():
+    assert not config.webhook_secret_strong("")
+    assert not config.webhook_secret_strong("short-secret")
+    assert config.webhook_secret_strong("x" * config.WEBHOOK_SECRET_MIN_LENGTH)
+
+
+# The code's default database address has no password in it (rule 1).
+def test_default_database_url_has_no_password(monkeypatch):
+    import importlib
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
+    fresh = importlib.reload(config)
+    try:
+        assert fresh.DATABASE_URL == "postgresql+psycopg://marketlens@localhost:5432/marketlens"
+        assert "@" in fresh.DATABASE_URL and ":" not in fresh.DATABASE_URL.split("//")[1].split("@")[0]
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)

@@ -27,6 +27,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TIMEZONE = "Asia/Kolkata"
 # PostgreSQL allows at most 65,535 values in one statement; stay well below it
 MAX_VALUES_PER_STATEMENT = 30000
+# The password written in .env.example; it must be replaced before connecting
+PLACEHOLDER_PASSWORD = ":CHANGE_ME@"
 
 
 # Turn any PostgreSQL address into one that uses the psycopg 3 driver.
@@ -102,6 +104,9 @@ def explain_db_error(error_text: str, url: str) -> str:
 def connection_status(url: str | None = None) -> tuple[bool, str]:
     """Used by the Settings page and by scripts/init_db.py."""
     url = url or config.DATABASE_URL
+    if PLACEHOLDER_PASSWORD in url:
+        return False, ("DATABASE_URL still has the placeholder password CHANGE_ME. "
+                       "Put your real PostgreSQL password in .env and restart the app.")
     try:
         with get_engine(url).connect() as conn:
             version = conn.execute(text("SHOW server_version")).scalar()
