@@ -137,7 +137,20 @@ the candles are saved as a CSV in that folder and in PostgreSQL (`price_bars`).
 - Without Dhan keys the page makes clearly labelled **DEMO** candles (`DEMO_...csv`),
   which are never saved to the database.
 
-### 8. Run the app
+### 8. Download option data (for the backtester and simulator)
+
+```bash
+python scripts/download_options.py index   --underlying NIFTY --from 2026-09-01 --to 2026-10-23
+python scripts/download_options.py expired --underlying NIFTY --from 2026-09-01 --to 2026-10-23
+python scripts/download_options.py snapshot --underlying NIFTY
+```
+
+`expired` stores minute bars for ATM-10 .. ATM+10, calls and puts (change with `--width`,
+`--types CE`, `--flag monthly`). Long downloads can be stopped with `Ctrl + C` and run again:
+finished days are skipped. Without Dhan keys the same commands store clearly marked DEMO
+data; the first real Dhan download deletes it.
+
+### 9. Run the app
 
 ```bash
 streamlit run app.py
@@ -185,8 +198,8 @@ MarketLens/
 │   ├── broker/            # market_data.py: get_data_client() -> Dhan (keys set) or DEMO
 │   │                      # dhan_data.py (DhanDataClient), demo_data.py (DemoDataClient),
 │   │                      # dhan_instruments.py (Security IDs, lot sizes), dhan_client.py (keys, errors)
-│   ├── options/pricing.py # Black-Scholes prices and Greeks
-│   ├── ingest/            # prices.py (yfinance daily), historical.py (candle downloads)
+│   ├── options/           # pricing.py (Black-Scholes), expiries.py (expiry-day rules)
+│   ├── ingest/            # prices.py (yfinance daily), historical.py (candles), options.py (option data)
 │   ├── costs.py           # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
 │   ├── utils.py           # @retry and RateLimiter helpers
 │   ├── logger.py          # writes messages to the terminal and logs/marketlens.log

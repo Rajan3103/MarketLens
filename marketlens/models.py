@@ -121,6 +121,7 @@ class PriceBar(Base):
     close: Mapped[Decimal]
     volume: Mapped[int | None] = mapped_column(BigInteger)
     oi: Mapped[int | None] = mapped_column(BigInteger)   # open interest (futures)
+    is_demo: Mapped[bool] = mapped_column(server_default=text("false"))  # made-up DEMO data
     # The unique key also works as the (instrument_id, timeframe, ts) index
     __table_args__ = (
         UniqueConstraint("instrument_id", "timeframe", "ts"),
@@ -139,6 +140,7 @@ class OptionContract(Base):
     trading_symbol: Mapped[str | None]
     dhan_security_id: Mapped[str | None]
     lot_size: Mapped[int | None]
+    is_demo: Mapped[bool] = mapped_column(server_default=text("false"))  # DEMO contract and prices
     created_at: Mapped[dt.datetime] = created_now()
     __table_args__ = (
         UniqueConstraint("underlying_id", "expiry", "strike", "option_type"),
@@ -508,6 +510,23 @@ class BrokerSession(Base):
         one_of("broker", ["dhan"]),
         one_of("status", ["active", "expired", "failed"]),
     )
+
+
+class DownloadProgress(Base):
+    """Which days a long download has finished, so it can skip them and resume safely.
+
+    dataset: e.g. "expired_options" or "index_minutes"
+    key:     what was downloaded, e.g. "DHAN|NIFTY|WEEK|ATM+1|CE"
+    rows:    how many rows that day gave (0 = holiday / no data, still counts as done)
+    """
+    __tablename__ = "download_progress"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    dataset: Mapped[str]
+    key: Mapped[str]
+    day: Mapped[dt.date]
+    rows: Mapped[int] = mapped_column(server_default=text("0"))
+    done_at: Mapped[dt.datetime] = created_now()
+    __table_args__ = (UniqueConstraint("dataset", "key", "day"),)
 
 
 class ErrorLog(Base):

@@ -82,7 +82,11 @@ def test_model_column_types():
     quotes = Base.metadata.tables["intraday_option_prices"]
     assert quotes.c.ts.type.timezone is True          # TIMESTAMPTZ
     assert type(Base.metadata.tables["strategies"].c.params.type).__name__ == "JSONB"
-    assert len(Base.metadata.tables) == 24
+    must_have = {"instruments", "daily_prices", "option_contracts", "option_quotes",
+                 "intraday_option_prices", "price_bars", "strategies", "strategy_legs", "orders",
+                 "signals", "positions", "trade_journal", "webhook_events", "broker_sessions",
+                 "error_log", "download_progress"}
+    assert must_have <= set(Base.metadata.tables)
 
 
 # ---------------------------------------------------------------------

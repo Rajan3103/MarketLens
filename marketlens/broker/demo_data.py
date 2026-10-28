@@ -7,8 +7,10 @@ How the numbers are made:
   - spot price: the latest real close from yfinance (fixed sensible values when offline)
   - volatility: India VIX from yfinance (14% when offline)
   - option prices and Greeks: Black-Scholes (marketlens/options/pricing.py) with a small "smile"
-  - minute bars: a random walk sized by that volatility, inside market hours
-Same inputs on the same day give the same numbers, so charts don't jump around.
+  - past prices (candles, expired options): ONE repeatable price path per underlying,
+    anchored at a fixed level on 1-Jan-2026, so every strike, the index minutes and
+    futures agree with each other, and a download run twice gives the same numbers
+  - minute bars inside a day run smoothly from the previous close to that day's close
 """
 import datetime as dt
 import math
@@ -25,6 +27,7 @@ from marketlens.broker.dhan_data import (CHAIN_COLUMNS, QUOTE_COLUMNS, OptionCha
                                          check_expired_request)
 from marketlens.broker.dhan_instruments import INDICES, Security
 from marketlens.logger import get_logger
+from marketlens.options import expiries
 from marketlens.options.pricing import RISK_FREE_RATE, bs_greeks, bs_price
 from marketlens.utils import retry
 
@@ -38,11 +41,9 @@ DEFAULT_STOCK_PRICE = 1000.0
 DEFAULT_VIX = 14.0
 STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "SENSEX": 100}
 STRIKES_EACH_SIDE = 20
-TUESDAY, THURSDAY = 1, 3
-# NSE/BSE rules since 2025: NIFTY weekly on Tuesday, SENSEX weekly on Thursday,
-# BANKNIFTY / FINNIFTY / stocks monthly only (last Tuesday). Holidays are not moved here.
-WEEKLY_DAY = {"NIFTY": TUESDAY, "SENSEX": THURSDAY}
-MONTHLY_DAY = {"SENSEX": THURSDAY}
+# The repeatable past price path: one value per weekday from 2015 to 2035
+LEVEL_START, LEVEL_END = dt.date(2015, 1, 1), dt.date(2035, 12, 31)
+LEVEL_ANCHOR_DAY = dt.date(2026, 1, 1)   # the path equals the anchor price on this day
 DEMO_CAPITAL_RS = 10_00_000       # virtual money shown as the DEMO fund balance
 DEMO_MARGIN_PCT = 0.12            # rough SPAN + exposure margin for sold options / futures
 TICK = 0.05
@@ -74,24 +75,21 @@ def to_tick(price: float) -> float:
     return max(TICK, round(round(price / TICK) * TICK, 2))
 
 
-# Last given weekday (0 = Monday) of a month.
-def last_weekday(year: int, month: int, weekday: int) -> dt.date:
-    nxt = dt.date(year + (month == 12), month % 12 + 1, 1)
-    day = nxt - dt.timedelta(days=1)
-    return day - dt.timedelta(days=(day.weekday() - weekday) % 7)
-
-
-# The expiry an option bought on `day` belongs to (weekly or monthly).
+# The expiry an option traded on `day` belongs to (weekly if that existed, else monthly).
 def next_expiry(underlying: str, day: dt.date, weekly: bool) -> dt.date:
-    underlying = underlying.upper()
-    if weekly and underlying in WEEKLY_DAY:
-        return day + dt.timedelta(days=(WEEKLY_DAY[underlying] - day.weekday()) % 7)
-    weekday = MONTHLY_DAY.get(underlying, TUESDAY)
-    expiry = last_weekday(day.year, day.month, weekday)
-    if expiry < day:
-        month = day.month % 12 + 1
-        expiry = last_weekday(day.year + (day.month == 12), month, weekday)
-    return expiry
+    """Uses the dated exchange rules in marketlens/options/expiries.py (holidays not moved)."""
+    flag = expiries.WEEK if weekly and expiries.has_weekly(underlying, day) else expiries.MONTH
+    return expiries.rule_expiry(underlying, day, flag)
+
+
+# One close per weekday (2015-2035) for a symbol: the backbone of all DEMO past prices.
+@lru_cache(maxsize=64)
+def _daily_levels(symbol: str, anchor: float, vol: float) -> pd.Series:
+    days = pd.bdate_range(LEVEL_START, LEVEL_END)
+    rng = np.random.default_rng(zlib.crc32(f"levels|{symbol}".encode()))
+    walk = np.cumsum(rng.normal(0, vol / math.sqrt(252), len(days)))
+    start = days.searchsorted(pd.Timestamp(LEVEL_ANCHOR_DAY))
+    return pd.Series(anchor * np.exp(walk - walk[start]), index=days.date)
 
 
 # Years from a moment until 15:30 IST on the expiry day (at least one minute).
@@ -191,7 +189,7 @@ class DemoDataClient:
         underlying = underlying.upper()
         today = self.now().date()
         dates = set()
-        if underlying in WEEKLY_DAY:
+        if expiries.has_weekly(underlying, today):
             first = next_expiry(underlying, today, weekly=True)
             dates.update(first + dt.timedelta(weeks=k) for k in range(weeks))
         day = today
@@ -234,13 +232,38 @@ class DemoDataClient:
             rows.append(row)
         return OptionChain(underlying, expiry, spot, pd.DataFrame(rows, columns=CHAIN_COLUMNS), self.source)
 
-    # A random-walk price path sized by the volatility, starting at `start_price`.
-    def _walk(self, start_price: float, count: int, minutes: int, rng) -> np.ndarray:
-        if minutes == DAILY_MINUTES:
-            step = self.vol() / math.sqrt(252)
-        else:
-            step = self.vol() * math.sqrt(minutes / (252 * SESSION_MINUTES))
-        return start_price * np.exp(np.cumsum(rng.normal(0, step, count)))
+    # Volatility used for DEMO past prices: the given VIX, else a fixed 14% (never live data,
+    # so stored DEMO history never changes from one day to the next).
+    def _history_vol(self) -> float:
+        return (self._vix if self._vix is not None else DEFAULT_VIX) / 100
+
+    # Close of `symbol` on every weekday (the shared, repeatable DEMO path).
+    def _levels(self, symbol: str) -> pd.Series:
+        symbol = symbol.upper()
+        anchor = self._spots.get(symbol) or DEFAULT_SPOTS.get(symbol, DEFAULT_STOCK_PRICE)
+        return _daily_levels(symbol, anchor, self._history_vol())
+
+    # The DEMO price of `symbol` at each candle time (same answer for every strike and module).
+    def _path(self, symbol: str, times: list, minutes: int) -> np.ndarray:
+        """Daily: that day's close. Intraday: a walk from the previous close to the day's close."""
+        levels = self._levels(symbol)
+        out = np.empty(len(times))
+        by_day = {}
+        for i, t in enumerate(times):
+            by_day.setdefault(t.date(), []).append(i)
+        for day, idx in by_day.items():
+            pos = levels.index.get_loc(day)
+            close, prev = levels.iloc[pos], levels.iloc[max(pos - 1, 0)]
+            if minutes == DAILY_MINUTES:
+                out[idx] = close
+                continue
+            rng = self._rng("path", symbol.upper(), day, minutes)
+            step = self._history_vol() * math.sqrt(minutes / (252 * SESSION_MINUTES))
+            walk = np.cumsum(rng.normal(0, step, len(idx)))
+            frac = np.arange(1, len(idx) + 1) / len(idx)
+            # Brownian bridge: random wiggles that still end exactly at the day's close
+            out[idx] = prev * np.exp(walk - frac * walk[-1] + frac * math.log(close / prev))
+        return out
 
     # Open/high/low around a closing-price series.
     @staticmethod
@@ -260,10 +283,11 @@ class DemoDataClient:
         if not times:
             return pd.DataFrame(columns=COLUMNS)
         rng = self._rng("candles", sec.security_id, sec.symbol, start, minutes)
-        under = self._walk(self.spot(sec.underlying or sec.symbol), len(times), minutes, rng)
+        under = self._path(sec.underlying or sec.symbol, times, minutes)
         if sec.kind == "option":
             years = [years_to_expiry(t.to_pydatetime(), sec.expiry) for t in times]
-            close = np.array([bs_price(s, sec.strike, y, smile_vol(self.vol(), s, sec.strike), sec.option_type)
+            vol = self._history_vol()
+            close = np.array([bs_price(s, sec.strike, y, smile_vol(vol, s, sec.strike), sec.option_type)
                               for s, y in zip(under, years)])
         elif sec.kind == "future":
             years = np.array([years_to_expiry(t.to_pydatetime(), sec.expiry) for t in times])
@@ -296,15 +320,16 @@ class DemoDataClient:
             progress(1, 1)
         if not times:
             return pd.DataFrame(columns=OPTION_COLUMNS)
+        if flag == expiries.WEEK and not expiries.has_weekly(underlying, start):
+            raise ValueError(f"{underlying} had no weekly options on {start:%d-%b-%Y}; use monthly.")
         rng = self._rng("expired", underlying, flag, strike, opt, start, interval)
-        spot0 = self.spot(underlying)
-        step = strike_step(underlying, spot0)
-        spots = self._walk(spot0, len(times), interval, rng)
+        spots = self._path(underlying, times, interval)
+        step = strike_step(underlying, float(spots[0]))
         strikes, ivs, closes = [], [], []
         for t, s in zip(times, spots):
             k = round(s / step) * step + offset * step
-            expiry = next_expiry(underlying, t.date(), weekly=(flag == "WEEK"))
-            vol = smile_vol(self.vol(), s, k)
+            expiry = expiries.rule_expiry(underlying, t.date(), flag)
+            vol = smile_vol(self._history_vol(), s, k)
             strikes.append(float(k))
             ivs.append(round(vol * 100, 2))
             closes.append(bs_price(s, k, years_to_expiry(t.to_pydatetime(), expiry), vol, opt))

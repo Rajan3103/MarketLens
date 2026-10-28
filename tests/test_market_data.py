@@ -110,9 +110,24 @@ def test_intraday(demo):
     assert list(df.columns) == COLUMNS and len(df) == 2 * 75
     assert (df["source"] == "DEMO").all()
     assert (df["high"] >= df[["open", "close"]].max(axis=1)).all()
-    assert abs(df["close"].iloc[0] / 25000 - 1) < 0.02
+    assert abs(df["close"].iloc[0] / 25000 - 1) < 0.3         # anchored at 25,000 on 1-Jan-2026
     with pytest.raises(ValueError):
         demo.get_intraday("NIFTY", dt.date(2026, 10, 26), dt.date(2026, 10, 27), interval=2)
+
+
+# Every DEMO module shares one price path: index minutes = the spot inside expired options,
+# daily candles = the last minute of the day, and each day starts where the last one ended.
+def test_shared_demo_path(demo):
+    day = dt.date(2026, 10, 27)
+    minutes = demo.get_intraday("NIFTY", day, day, interval=15)
+    options = demo.get_expired_options("NIFTY", "weekly", "ATM", "CE", day, day, interval=15)
+    assert (minutes["close"].values == options["spot"].values).all()
+    daily = demo.get_candles("NIFTY", dt.date(2026, 10, 26), day, 1440)
+    assert daily["close"].iloc[-1] == minutes["close"].iloc[-1]
+    two_days = demo.get_intraday("NIFTY", dt.date(2026, 10, 26), day, interval=15)
+    assert two_days["close"].iloc[25] / daily["close"].iloc[0] == pytest.approx(1, abs=0.01)
+    again = DemoDataClient(spots={"NIFTY": 25000}, vix=14, now=NOW).get_intraday("NIFTY", day, day, 15)
+    assert (again["close"].values == minutes["close"].values).all()     # repeatable
 
 
 # DEMO option candles follow Black-Scholes: a deep in-the-money call is worth about spot - strike.
