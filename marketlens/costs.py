@@ -143,6 +143,15 @@ def slippage_cost(price: float, qty: int, settings: CostSettings) -> float:
     return to_paise(per_unit * qty)
 
 
+# The price you really get after slippage: a buy fills higher, a sell lower (never below 5 paise).
+def apply_slippage(price: float, side: str, settings: CostSettings | None = None) -> float:
+    """pct: worse by slippage_value % of the price; points: worse by slippage_value rupees."""
+    settings = settings or CostSettings()
+    slip = price * settings.slippage_value / 100 if settings.slippage_type == "pct" else settings.slippage_value
+    filled = price + slip if side.upper() == "BUY" else price - slip
+    return to_paise(max(filled, 0.05))
+
+
 # Work out brokerage for one order.
 def brokerage(segment: str, turnover: float, settings: CostSettings) -> float:
     """Delivery: delivery_brokerage. Options: flat per order.

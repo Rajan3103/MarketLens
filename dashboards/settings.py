@@ -62,6 +62,7 @@ if config.is_set(config.WEBHOOK_SECRET) and not config.webhook_secret_strong():
 st.subheader("Other settings")
 others = {
     "TRADING_MODE": config.TRADING_MODE,
+    "PAPER_CAPITAL": config.PAPER_CAPITAL,
     "AUTO_TRADE": config.AUTO_TRADE,
     "MAX_DAILY_LOSS_RS": f"Rs {config.MAX_DAILY_LOSS_RS:,.0f}",
     "MAX_ORDERS_PER_SECOND": config.MAX_ORDERS_PER_SECOND,

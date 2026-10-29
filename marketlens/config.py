@@ -107,6 +107,7 @@ DEMO_MODE = get_bool("DEMO_MODE", True)
 # ---- Trading safety ----
 # "paper" (practice) is the safe default; only the exact word "live" sends real orders
 TRADING_MODE = get_choice("TRADING_MODE", "paper", ["paper", "live"])
+PAPER_CAPITAL = get_number("PAPER_CAPITAL", 500_000.0, float, minimum=0)    # virtual money for paper trading
 AUTO_TRADE = get_bool("AUTO_TRADE", False)
 MAX_DAILY_LOSS_RS = get_number("MAX_DAILY_LOSS_RS", 2000.0, float, minimum=0)
 MAX_ORDERS_PER_SECOND = get_number("MAX_ORDERS_PER_SECOND", 5, int, minimum=1)

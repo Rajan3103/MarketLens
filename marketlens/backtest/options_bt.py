@@ -32,7 +32,7 @@ import pandas as pd
 
 from marketlens.backtest.engine import BacktestResult, Trade
 from marketlens.broker.candles import IST
-from marketlens.costs import CostSettings, to_paise
+from marketlens.costs import CostSettings, apply_slippage, to_paise
 from marketlens.logger import get_logger
 from marketlens.options import expiries
 from marketlens.options.chain import DEFAULT_LOT_SIZES
@@ -373,9 +373,7 @@ class DayArrays:
 
 # The price you really get: worse than the candle by the slippage (buy higher, sell lower).
 def fill_price(price: float, order_side: str, costs: CostSettings) -> float:
-    slip = price * costs.slippage_value / 100 if costs.slippage_type == "pct" else costs.slippage_value
-    filled = price + slip if order_side == "BUY" else price - slip
-    return to_paise(max(filled, 0.05))
+    return apply_slippage(price, order_side, costs)
 
 
 # Years from a moment to 15:30 on the expiry day (for delta).

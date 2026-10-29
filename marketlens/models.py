@@ -389,6 +389,10 @@ class Order(Base):
         ForeignKey("forward_test_runs.id", ondelete="SET NULL"))
     instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"))
     contract_id: Mapped[int | None] = mapped_column(ForeignKey("option_contracts.id"))
+    symbol: Mapped[str | None] = mapped_column(index=True)    # e.g. "RELIANCE" or "NIFTY 25000 CE 03-Nov-2026"
+    security_id: Mapped[str | None]           # Dhan's Security ID, when known
+    segment: Mapped[str | None]               # costs.py segment: options, futures, equity_intraday, equity_delivery
+    tag: Mapped[str | None]                   # free label, e.g. the strategy or signal that sent it
     side: Mapped[str]
     order_type: Mapped[str] = mapped_column(server_default="MARKET")
     product: Mapped[str] = mapped_column(server_default="INTRADAY")
@@ -399,6 +403,8 @@ class Order(Base):
     broker_order_id: Mapped[str | None]
     filled_qty: Mapped[int] = mapped_column(server_default=text("0"))
     avg_fill_price: Mapped[Decimal | None]
+    costs: Mapped[Decimal | None] = mapped_column(Money)     # brokerage + taxes of the fill (costs.py)
+    filled_at: Mapped[dt.datetime | None]
     error_message: Mapped[str | None] = mapped_column(Text)
     placed_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), index=True)
     updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -419,11 +425,16 @@ class Position(Base):
     strategy_id: Mapped[int | None] = mapped_column(ForeignKey("strategies.id", ondelete="SET NULL"))
     instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"))
     contract_id: Mapped[int | None] = mapped_column(ForeignKey("option_contracts.id"))
+    symbol: Mapped[str | None]
+    security_id: Mapped[str | None]
+    segment: Mapped[str | None]
+    product: Mapped[str] = mapped_column(server_default="INTRADAY")
     qty: Mapped[int]
     avg_price: Mapped[Decimal]
     ltp: Mapped[Decimal | None]
-    realized_pnl: Mapped[Decimal] = mapped_column(Money, server_default=text("0"))
+    realized_pnl: Mapped[Decimal] = mapped_column(Money, server_default=text("0"))   # before costs
     unrealized_pnl: Mapped[Decimal | None] = mapped_column(Money)
+    costs: Mapped[Decimal] = mapped_column(Money, server_default=text("0"))           # all orders so far
     is_open: Mapped[bool] = mapped_column(server_default=text("true"))
     opened_at: Mapped[dt.datetime] = created_now()
     closed_at: Mapped[dt.datetime | None]
