@@ -15,8 +15,9 @@ the DEMO rows for that underlying are deleted first, so the two never mix.
 """
 import datetime as dt
 
+import numpy as np
 import pandas as pd
-from sqlalchemy import Float, cast, delete, func, select
+from sqlalchemy import delete, func, select, text
 
 from marketlens.broker.candles import IST
 from marketlens.broker.dhan_data import MAX_EXPIRED_OPTION_DAYS, MAX_INTRADAY_DAYS
@@ -318,6 +319,22 @@ def stored_expiries(underlying: str, day: dt.date, url: str | None = None) -> li
         return sorted(rows)
 
 
+# One day of one expiry, each column as one array, in time / strike / CE-PE order.
+_ORDER = "ORDER BY p.ts, c.strike, c.option_type"
+DAY_BARS_SQL = text(f"""
+    SELECT array_agg(extract(epoch FROM p.ts)::float8 {_ORDER}), array_agg(c.strike::float8 {_ORDER}),
+           array_agg(c.option_type {_ORDER}), array_agg(p.open::float8 {_ORDER}),
+           array_agg(p.high::float8 {_ORDER}), array_agg(p.low::float8 {_ORDER}),
+           array_agg(p.close::float8 {_ORDER}), array_agg(p.volume {_ORDER}), array_agg(p.oi {_ORDER}),
+           array_agg(p.iv::float8 {_ORDER}), bool_or(c.is_demo)
+    FROM intraday_option_prices p JOIN option_contracts c ON c.id = p.contract_id
+    WHERE c.underlying_id = :uid AND c.expiry = :expiry AND p.ts >= :start AND p.ts < :stop""")
+# The index's one-minute closes of that day (stored by download_index_minutes).
+DAY_SPOT_SQL = text("""
+    SELECT array_agg(extract(epoch FROM ts)::float8 ORDER BY ts), array_agg(close::float8 ORDER BY ts)
+    FROM price_bars WHERE instrument_id = :uid AND timeframe = 1 AND ts >= :start AND ts < :stop""")
+
+
 # One day's minute data for every stored strike of one expiry, as one table.
 def load_option_day(underlying: str, day: dt.date, expiry: dt.date | None = None,
                     url: str | None = None) -> pd.DataFrame:
@@ -337,34 +354,31 @@ def load_option_day(underlying: str, day: dt.date, expiry: dt.date | None = None
         underlying_id = session.scalar(select(Instrument.id).where(Instrument.symbol == underlying))
         if underlying_id is None:
             return pd.DataFrame(columns=columns)
-        # Numbers come back as plain floats (cast in PostgreSQL): much faster than Decimal for a year of days
-        bars = session.execute(
-            select(IntradayOptionPrice.ts, cast(OptionContract.strike, Float), OptionContract.option_type,
-                   cast(IntradayOptionPrice.open, Float), cast(IntradayOptionPrice.high, Float),
-                   cast(IntradayOptionPrice.low, Float), cast(IntradayOptionPrice.close, Float),
-                   IntradayOptionPrice.volume, IntradayOptionPrice.oi,
-                   cast(IntradayOptionPrice.iv, Float), OptionContract.is_demo)
-            .join(OptionContract, OptionContract.id == IntradayOptionPrice.contract_id)
-            .where(OptionContract.underlying_id == underlying_id, OptionContract.expiry == expiry,
-                   IntradayOptionPrice.ts >= start, IntradayOptionPrice.ts < stop)).all()
-        spots = dict(session.execute(
-            select(PriceBar.ts, cast(PriceBar.close, Float)).where(
-                PriceBar.instrument_id == underlying_id, PriceBar.timeframe == 1,
-                PriceBar.ts >= start, PriceBar.ts < stop)).all())
-    if not bars:
+        # Speed: PostgreSQL sends each column as ONE array (times as epoch seconds, numbers as floats),
+        # so Python never builds 15,000 row objects. A year of days loads several times faster.
+        params = {"uid": underlying_id, "expiry": expiry, "start": start, "stop": stop}
+        bars = session.execute(DAY_BARS_SQL, params).one()
+        spots = session.execute(DAY_SPOT_SQL, params).one()
+    if not bars[0]:
         return pd.DataFrame(columns=columns)
-    df = pd.DataFrame.from_records(bars, columns=[c for c in columns if c != "spot"])
-    for col in ("strike", "open", "high", "low", "close", "iv"):
-        df[col] = df[col].astype(float)
-    df["ts"] = pd.to_datetime(df["ts"], utc=True).dt.tz_convert(IST)
-    spot_series = pd.Series(spots, dtype=float)
-    if not spot_series.empty:
-        spot_series.index = pd.to_datetime(spot_series.index, utc=True).tz_convert(IST)
-    df["spot"] = df["ts"].map(spot_series) if not spot_series.empty else float("nan")
-    df = df[columns].sort_values(["ts", "strike", "option_type"]).reset_index(drop=True)
-    df.attrs.update({"underlying": underlying, "day": day, "expiry": expiry,
-                     "is_demo": bool(df["is_demo"].any())})
-    return df
+    epochs = np.array(bars[0], dtype=float)
+    df = pd.DataFrame({"ts": pd.to_datetime(epochs, unit="s", utc=True).tz_convert(IST),
+                       "strike": np.array(bars[1], dtype=float), "option_type": bars[2]})
+    for i, col in enumerate(("open", "high", "low", "close"), start=3):
+        df[col] = np.array(bars[i], dtype=float)
+    for i, col in ((7, "volume"), (8, "oi")):
+        values = bars[i]
+        df[col] = pd.array(values, dtype="Int64") if None in values else np.array(values, dtype=np.int64)
+    df["iv"] = np.array(bars[9], dtype=float)
+    if spots[0]:
+        where = pd.Index(np.array(spots[0], dtype=float)).get_indexer(epochs)
+        spot = np.array(spots[1], dtype=float)[np.clip(where, 0, None)]
+        df["spot"] = np.where(where >= 0, spot, np.nan)
+    else:
+        df["spot"] = np.nan
+    df["is_demo"] = bool(bars[10])
+    df.attrs.update({"underlying": underlying, "day": day, "expiry": expiry, "is_demo": bool(bars[10])})
+    return df[columns]
 
 
 # Days between start and end that have stored option minute bars.

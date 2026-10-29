@@ -286,9 +286,9 @@ class SimSession:
         if target < self.clock.minute:
             if self.positions:
                 raise ValueError("You have trades in this session: start a new session to go back in time")
-            self.clock.step(target - self.clock.minute)
+            moved = self.clock.step(target - self.clock.minute)
             self.pnl_curve = [(self.clock.minute, 0.0)]
-            return target - self.clock.minute
+            return moved
         return self.advance(target - self.clock.minute)
 
     # Stop loss and target on candle m (high and low), like the backtester.

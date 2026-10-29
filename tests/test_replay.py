@@ -80,7 +80,8 @@ def test_sl_fill_by_hand():
     assert pos.is_open and sim.pnl() == -50                   # (100 - 105) x 10
     sim.advance(1)                                            # candle 3: high 125 >= 120
     assert (pos.exit_price, pos.reason, pos.exit_minute, pos.gross()) == (120, "SL", 3, -200)
-    assert sim.pnl() == -200 and [v for _, v in sim.pnl_curve] == [0, -50, -200]
+    # one point per minute: 09:16 and 09:17 (no trade yet), 09:18 (-50), 09:19 (-200)
+    assert sim.pnl() == -200 and [v for _, v in sim.pnl_curve] == [0, 0, -50, -200]
 
 
 # Bought PE 26000 at 81 with target 2 points (83): candle 3 closes at 83 (high 83) -> out at 83.
