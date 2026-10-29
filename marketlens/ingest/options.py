@@ -16,7 +16,7 @@ the DEMO rows for that underlying are deleted first, so the two never mix.
 import datetime as dt
 
 import pandas as pd
-from sqlalchemy import delete, func, select
+from sqlalchemy import Float, cast, delete, func, select
 
 from marketlens.broker.candles import IST
 from marketlens.broker.dhan_data import MAX_EXPIRED_OPTION_DAYS, MAX_INTRADAY_DAYS
@@ -337,25 +337,30 @@ def load_option_day(underlying: str, day: dt.date, expiry: dt.date | None = None
         underlying_id = session.scalar(select(Instrument.id).where(Instrument.symbol == underlying))
         if underlying_id is None:
             return pd.DataFrame(columns=columns)
+        # Numbers come back as plain floats (cast in PostgreSQL): much faster than Decimal for a year of days
         bars = session.execute(
-            select(IntradayOptionPrice.ts, OptionContract.strike, OptionContract.option_type,
-                   IntradayOptionPrice.open, IntradayOptionPrice.high, IntradayOptionPrice.low,
-                   IntradayOptionPrice.close, IntradayOptionPrice.volume, IntradayOptionPrice.oi,
-                   IntradayOptionPrice.iv, OptionContract.is_demo)
+            select(IntradayOptionPrice.ts, cast(OptionContract.strike, Float), OptionContract.option_type,
+                   cast(IntradayOptionPrice.open, Float), cast(IntradayOptionPrice.high, Float),
+                   cast(IntradayOptionPrice.low, Float), cast(IntradayOptionPrice.close, Float),
+                   IntradayOptionPrice.volume, IntradayOptionPrice.oi,
+                   cast(IntradayOptionPrice.iv, Float), OptionContract.is_demo)
             .join(OptionContract, OptionContract.id == IntradayOptionPrice.contract_id)
             .where(OptionContract.underlying_id == underlying_id, OptionContract.expiry == expiry,
                    IntradayOptionPrice.ts >= start, IntradayOptionPrice.ts < stop)).all()
         spots = dict(session.execute(
-            select(PriceBar.ts, PriceBar.close).where(
+            select(PriceBar.ts, cast(PriceBar.close, Float)).where(
                 PriceBar.instrument_id == underlying_id, PriceBar.timeframe == 1,
                 PriceBar.ts >= start, PriceBar.ts < stop)).all())
     if not bars:
         return pd.DataFrame(columns=columns)
-    df = pd.DataFrame(bars, columns=[c for c in columns if c != "spot"])
+    df = pd.DataFrame.from_records(bars, columns=[c for c in columns if c != "spot"])
     for col in ("strike", "open", "high", "low", "close", "iv"):
         df[col] = df[col].astype(float)
-    df["spot"] = df["ts"].map(lambda t: float(spots[t]) if t in spots else None)
-    df["ts"] = pd.to_datetime(df["ts"]).dt.tz_convert(IST)
+    df["ts"] = pd.to_datetime(df["ts"], utc=True).dt.tz_convert(IST)
+    spot_series = pd.Series(spots, dtype=float)
+    if not spot_series.empty:
+        spot_series.index = pd.to_datetime(spot_series.index, utc=True).tz_convert(IST)
+    df["spot"] = df["ts"].map(spot_series) if not spot_series.empty else float("nan")
     df = df[columns].sort_values(["ts", "strike", "option_type"]).reset_index(drop=True)
     df.attrs.update({"underlying": underlying, "day": day, "expiry": expiry,
                      "is_demo": bool(df["is_demo"].any())})

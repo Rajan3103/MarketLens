@@ -268,8 +268,12 @@ class DemoDataClient:
 
     # Open/high/low around a closing-price series.
     @staticmethod
-    def _bars(close: np.ndarray, rng, wiggle: float) -> dict:
+    def _bars(close: np.ndarray, rng, wiggle: float, new_contract: np.ndarray | None = None) -> dict:
+        """new_contract: True where the series moved to another strike (ATM rolled); that candle opens
+        at its own close instead of the previous strike's close (which would look like a price jump)."""
         open_ = np.r_[close[0], close[:-1]]
+        if new_contract is not None:
+            open_ = np.where(new_contract, close, open_)
         extra = np.abs(rng.normal(0, wiggle, len(close))) * close
         return {"open": open_, "high": np.maximum(open_, close) + extra,
                 "low": np.maximum(TICK, np.minimum(open_, close) - extra), "close": close}
@@ -334,8 +338,11 @@ class DemoDataClient:
             vol = smile_vol(self._history_vol(), s, k)
             strikes.append(float(k))
             ivs.append(round(vol * 100, 2))
-            closes.append(bs_price(s, k, years_to_expiry(t.to_pydatetime(), expiry), RISK_FREE_RATE, vol, opt))
-        bars = self._bars(np.array(closes), rng, 0.002)
+            closes.append(max(bs_price(s, k, years_to_expiry(t.to_pydatetime(), expiry), RISK_FREE_RATE, vol, opt),
+                              TICK))      # options never trade below 5 paise
+        strikes_arr = np.array(strikes)
+        rolled = np.r_[False, strikes_arr[1:] != strikes_arr[:-1]]
+        bars = self._bars(np.array(closes), rng, 0.002, new_contract=rolled)
         df = pd.DataFrame({"timestamp": times, **{k: np.round(v, 2) for k, v in bars.items()}})
         df["volume"] = rng.integers(10_000, 2_000_000, len(df))
         df["oi"] = rng.integers(500_000, 10_000_000, len(df))

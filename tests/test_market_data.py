@@ -130,6 +130,21 @@ def test_shared_demo_path(demo):
     assert (again["close"].values == minutes["close"].values).all()     # repeatable
 
 
+# When the ATM series moves to another strike, that candle opens at its own price, not the old
+# strike's close (otherwise a backtest would see a fake jump and hit stop losses at the open).
+def test_expired_options_open_after_roll(demo):
+    day = dt.date(2026, 10, 12)
+    df = demo.get_expired_options("NIFTY", "weekly", "ATM", "CE", day, day, interval=1)
+    rolled = df["strike"].ne(df["strike"].shift()) & (df.index > 0)
+    assert rolled.any()
+    assert (df.loc[rolled, "open"] == df.loc[rolled, "close"]).all()
+    same = ~rolled & (df.index > 0)
+    assert (df["open"][same].values == df["close"].shift()[same].values).all()
+    # Far out-of-the-money on expiry day: never below one tick (5 paise), like the real market
+    far = demo.get_expired_options("NIFTY", "weekly", "ATM+10", "CE", dt.date(2026, 10, 20), dt.date(2026, 10, 20))
+    assert far["close"].min() >= 0.05 and far["low"].min() >= 0.05
+
+
 # DEMO option candles follow Black-Scholes: a deep in-the-money call is worth about spot - strike.
 def test_option_candles(demo):
     deep_itm = Security("NIFTY-Nov2026-24000-CE", "DEMO", "NSE_FNO", "OPTIDX", "NSE", "option",

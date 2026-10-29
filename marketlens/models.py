@@ -255,14 +255,17 @@ class BacktestTrade(Base):
     leg_no: Mapped[int | None]
     instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"))
     contract_id: Mapped[int | None] = mapped_column(ForeignKey("option_contracts.id"))
+    symbol: Mapped[str | None]                # e.g. "NIFTY 25000 CE 03-Nov-2026"
     side: Mapped[str]
     qty: Mapped[int]
     entry_time: Mapped[dt.datetime]
     entry_price: Mapped[Decimal]
     exit_time: Mapped[dt.datetime | None]
     exit_price: Mapped[Decimal | None]
-    pnl: Mapped[Decimal | None] = mapped_column(Money)
-    exit_reason: Mapped[str | None]           # SL, TARGET, TIME, SIGNAL
+    pnl: Mapped[Decimal | None] = mapped_column(Money)            # after costs
+    costs: Mapped[Decimal | None] = mapped_column(Money)          # brokerage + taxes + slippage
+    exit_reason: Mapped[str | None]           # SL, TARGET, TRAIL_SL, COST_SL, M2M_SL, M2M_TARGET, M2M_TRAIL, TIME
+    note: Mapped[str | None] = mapped_column(Text)   # e.g. "SL and target both touched: assumed SL"
     __table_args__ = (
         Index("ix_backtest_trades_run_entry", "run_id", "entry_time"),
         one_of("side", ["BUY", "SELL"]),
@@ -303,12 +306,15 @@ class SimulatorTrade(Base):
     __tablename__ = "simulator_trades"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("simulator_sessions.id", ondelete="CASCADE"))
-    contract_id: Mapped[int] = mapped_column(ForeignKey("option_contracts.id"))
+    contract_id: Mapped[int | None] = mapped_column(ForeignKey("option_contracts.id"))
+    symbol: Mapped[str | None]                # e.g. "NIFTY 25000 CE 03-Nov-2026"
     side: Mapped[str]
     qty: Mapped[int]
     price: Mapped[Decimal]
     market_time: Mapped[dt.datetime]          # the replayed market time, not today's clock
-    pnl: Mapped[Decimal | None] = mapped_column(Money)
+    pnl: Mapped[Decimal | None] = mapped_column(Money)            # on the closing order, after costs
+    costs: Mapped[Decimal | None] = mapped_column(Money)          # costs.py: brokerage + taxes of this order
+    reason: Mapped[str | None]                # OPEN, MANUAL, SL, TARGET, EXIT_ALL, DAY_END
     created_at: Mapped[dt.datetime] = created_now()
     __table_args__ = (
         Index("ix_simulator_trades_session_time", "session_id", "market_time"),

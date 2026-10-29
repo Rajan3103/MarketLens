@@ -1,8 +1,7 @@
-"""Tests for marketlens/options/chain.py and marketlens/options/payoff.py."""
+"""Tests for marketlens/options/chain.py (payoff tests are in test_strategies.py)."""
 import datetime as dt
 import math
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -10,8 +9,6 @@ from marketlens.broker.candles import IST
 from marketlens.broker.demo_data import DemoDataClient
 from marketlens.options.chain import (atm_straddle, atm_strike, chain_summary, chain_view, expected_move,
                                       make_leg, max_pain, pain_curve, pcr)
-from marketlens.options.payoff import (breakevens, leg_payoff, payoff_summary, price_range,
-                                       strategy_payoff)
 
 
 # A tiny hand-made chain with 3 strikes.
@@ -65,61 +62,10 @@ def test_chain_view():
     assert list(view["pe_itm"]) == [False] * 4 + [True] * 3
 
 
-# A builder leg takes its premium from the chain.
+# A builder leg takes its premium and IV from the chain.
 def test_make_leg(small):
     leg = make_leg(small, "nifty", dt.date(2026, 11, 3), 25000, "pe", "sell", lots=2, lot_size=65)
-    assert leg == {"side": "SELL", "option_type": "PE", "strike": 25000.0, "premium": 110.0, "lots": 2,
-                   "lot_size": 65, "expiry": dt.date(2026, 11, 3), "underlying": "NIFTY"}
+    assert (leg.side, leg.option_type, leg.strike, leg.entry_price, leg.lots, leg.lot_size, leg.iv) ==         ("SELL", "PE", 25000.0, 110.0, 2, 65, 14.5)
+    assert leg.expiry == dt.date(2026, 11, 3) and leg.qty == 130 and leg.sign == -1
     with pytest.raises(ValueError):
         make_leg(small, "NIFTY", dt.date(2026, 11, 3), 99999, "CE")
-
-
-# ---- payoff ----
-
-CALL = {"side": "BUY", "option_type": "CE", "strike": 25000, "premium": 100, "lots": 1, "lot_size": 65}
-
-
-# A bought call: loses the premium below the strike, gains above it.
-def test_long_call():
-    pnl = leg_payoff(CALL, np.array([24000.0, 25000, 25100, 25500]))
-    assert list(pnl) == [-6500, -6500, 0, 26000]
-
-
-# Short straddle: max profit = premiums received, breakevens = strike +/- total premium, unlimited loss.
-def test_short_straddle():
-    legs = [{"side": "SELL", "option_type": "CE", "strike": 25000, "premium": 150, "lots": 1, "lot_size": 65},
-            {"side": "SELL", "option_type": "PE", "strike": 25000, "premium": 140, "lots": 1, "lot_size": 65}]
-    prices = price_range(25000)
-    s = payoff_summary(legs, prices)
-    assert s["max_profit"] == pytest.approx(290 * 65) and s["max_loss"] is None
-    assert s["breakevens"] == [pytest.approx(24710, abs=0.01), pytest.approx(25290, abs=0.01)]
-    assert s["net_premium"] == 290 * 65
-
-
-# Bull call spread: limited both ways; profit capped at the strike gap minus net premium.
-def test_bull_call_spread():
-    legs = [CALL, {"side": "SELL", "option_type": "CE", "strike": 25200, "premium": 30, "lots": 1, "lot_size": 65}]
-    s = payoff_summary(legs, price_range(25000))
-    assert s["max_profit"] == pytest.approx((200 - 70) * 65) and s["max_loss"] == pytest.approx(-70 * 65)
-    assert s["breakevens"] == [pytest.approx(25070, abs=0.01)]
-
-
-# A sold put's worst case is at a price of 0, even outside the drawn range.
-def test_sold_put_worst_case():
-    put = {"side": "SELL", "option_type": "PE", "strike": 25000, "premium": 100, "lots": 1, "lot_size": 1}
-    s = payoff_summary([put], price_range(25000, pct=5))
-    assert s["max_loss"] == pytest.approx(-(25000 - 100)) and s["max_profit"] == pytest.approx(100)
-
-
-# Breakevens are found between the drawn points by a straight line.
-def test_breakevens_interpolated():
-    assert breakevens(np.array([0.0, 10.0]), np.array([-5.0, 5.0])) == [5.0]
-    assert strategy_payoff([], np.array([1.0, 2.0])).tolist() == [0.0, 0.0]
-
-
-# Max profit is exact even when no chart point lands on the strike (spot 22,749.75, strike 22,750).
-def test_max_profit_exact_off_grid():
-    legs = [{"side": "SELL", "option_type": "CE", "strike": 22750, "premium": 190.2, "lots": 1, "lot_size": 65},
-            {"side": "SELL", "option_type": "PE", "strike": 22750, "premium": 180.2, "lots": 1, "lot_size": 65}]
-    s = payoff_summary(legs, price_range(22749.75))
-    assert s["max_profit"] == pytest.approx(370.4 * 65) == s["net_premium"]

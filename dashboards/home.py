@@ -12,9 +12,9 @@ Welcome! Pick a dashboard from the menu on the left.
 | Group | # | Module | What it does | Status |
 | --- | --- | --- | --- | --- |
 | **Market & data** | 1 | Live Market Overview | Nifty, Bank Nifty, Fin Nifty, Sensex, VIX cards; Nifty 50 gainers/losers and breadth (auto-refresh in market hours); moving-average chart | ✅ |
-| | 2 | Option Chain & Strategy Builder | Chain with PCR, max pain, straddle, expected move, OI charts; any-leg strategy builder with payoff, max profit/loss, breakevens | ✅ (DEMO without Dhan keys) |
+| | 2 | Option Chain & Strategy Builder | Chain with PCR, max pain, straddle, expected move, OI charts; builder with 12 templates, payoff today/at expiry, net Greeks, POP, margin, save/backtest/paper trade | ✅ (DEMO without Dhan keys) |
 | | 3 | Historical Data Downloader | Option chain snapshots, expired options (1-min, ATM±10), stocks/ETFs/indices daily, Dhan intraday candles; what is stored | ✅ (DEMO without Dhan keys) |
-| **Options testing** | 4 | Options Backtester | Test option strategies on past data | 📋 |
+| **Options testing** | 4 | Options Backtester | Multi-leg strategies on stored 1-min option data: ATM±N / premium / delta strikes, leg SL/target/trailing/lock, re-entry, range breakout, overall M2M; 5 templates; equity, drawdown, day/month heatmaps, trade list with exit reasons, Excel | ✅ (on stored data) |
 | | 5 | Option Simulator | Replay a past day and practise trading it | 📋 |
 | | 6 | Forward Test / Paper Trading | Run a strategy live with virtual money | 📋 |
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Indicator rules, TradingView/Chartink webhooks, Pine Script | 🛠️ Pine export ready |

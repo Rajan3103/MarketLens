@@ -5,6 +5,14 @@ from marketlens.costs import round_trip_costs
 from marketlens.ui import cost_settings_inputs, coming_soon, historical_note, key_notice
 
 st.title("⏪ Option Simulator")
+
+# A day sent here from the Options Backtester (module 4)
+sim = st.session_state.get("sim_handoff")
+if sim:
+    st.success(f"Received from the Options Backtester: **{sim['day']:%a %d-%b-%Y}** "
+               f"({sim['underlying']}, expiry {sim['expiry']:%d-%b-%Y}) for **{sim['name']}**. "
+               "The simulator (coming soon) will replay this day minute by minute.")
+    st.dataframe(sim["trades"], hide_index=True, width="stretch")
 key_notice("Dhan", ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"],
            "The simulator will replay a DEMO day until then.")
 coming_soon("Option Simulator", [

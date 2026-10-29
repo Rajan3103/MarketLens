@@ -133,17 +133,19 @@ def lot_size_for(underlying: str) -> int:
     return DEFAULT_LOT_SIZES.get(underlying.upper(), 1)
 
 
-# A strategy-builder leg from one row of the chain.
+# A strategy-builder leg from one row of the chain (premium = last traded price, with its IV).
 def make_leg(table: pd.DataFrame, underlying: str, expiry: dt.date, strike: float, option_type: str,
-             side: str = "BUY", lots: int = 1, lot_size: int = 1) -> dict:
-    """Premium = that option's last traded price. Raises ValueError if the strike is not in the chain."""
-    option_type, side = option_type.upper(), side.upper()
-    if option_type not in ("CE", "PE") or side not in ("BUY", "SELL"):
-        raise ValueError("option_type must be CE/PE and side BUY/SELL")
+             side: str = "BUY", lots: int = 1, lot_size: int = 1):
+    """Returns a strategies.Leg. Raises ValueError if the strike is not in the chain."""
+    from marketlens.options.strategies import Leg
+    option_type = option_type.upper()
+    if option_type not in ("CE", "PE"):
+        raise ValueError("option_type must be CE or PE")
     rows = table[table["strike"] == float(strike)]
     if rows.empty:
         raise ValueError(f"Strike {strike} is not in this chain")
-    premium = rows.iloc[0][f"{option_type.lower()}_ltp"]
-    return {"side": side, "option_type": option_type, "strike": float(strike),
-            "premium": float(premium) if pd.notna(premium) else 0.0, "lots": int(lots),
-            "lot_size": int(lot_size), "expiry": expiry, "underlying": underlying.upper()}
+    row = rows.iloc[0]
+    premium, iv = row[f"{option_type.lower()}_ltp"], row[f"{option_type.lower()}_iv"]
+    return Leg(side, option_type, float(strike), expiry, int(lots),
+               float(premium) if pd.notna(premium) else 0.0, int(lot_size),
+               float(iv) if pd.notna(iv) else None)
