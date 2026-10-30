@@ -240,3 +240,26 @@ def test_indicator_runner(db_url, db_session, tmp_path):
     assert runner.cycle()["state"] == "done" and runner.broker.open_count() == 0
     trades = fw.status(sid, url=db_url)["params"]["trades"]
     assert [t["exit_reason"] for t in trades] == ["SIGNAL", "TIME"]
+
+
+# ---- the built-in DEMO practice strategy ----
+
+# --strategy demo adds the practice strategy once and runs it on DEMO prices; the real id works the same way.
+def test_demo_strategy_command_line(db_url, db_session, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(fw, "DATA_DIR", tmp_path)
+    assert fw.main(["--strategy", "demo", "--once", "--at", "2026-10-28 09:18"], url=db_url) == 0
+    sid = fw.ensure_demo_strategy(url=db_url)                    # same id again: added only once
+    assert fw.list_strategies(url=db_url)["name"].tolist() == [fw.DEMO_STRATEGY_NAME]
+    assert f"strategy id {sid}" in capsys.readouterr().out
+    assert fw.status(sid, url=db_url)["state"] == "waiting"
+    assert fw.main(["--strategy", str(sid), "--once", "--at", "2026-10-28 09:19"], url=db_url) == 0
+    assert fw.status(sid, url=db_url)["params"]["market_time"] == "09:19"
+    assert fw.main(["--strategy", "straddle", "--once"], url=db_url) == 2          # not a number or "demo"
+    assert "must be a number" in capsys.readouterr().out
+
+
+# The practice strategy always uses DEMO prices, even when Dhan keys are set.
+def test_demo_strategy_uses_demo_prices(db_url, db_session, tmp_path):
+    sid = fw.ensure_demo_strategy(url=db_url)
+    runner = fw.ForwardRunner(sid, url=db_url, data_dir=tmp_path)
+    assert type(runner.client).__name__ == "DemoDataClient" and runner.client.moving

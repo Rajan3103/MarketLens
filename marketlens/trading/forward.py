@@ -1,9 +1,12 @@
 """Forward testing (module 6): run a saved strategy on today's live market with virtual money.
 
 Run it in the background (it keeps going when the browser is closed):
-    python -m marketlens.trading.forward --strategy 3
+    python -m marketlens.trading.forward --strategy demo --once --at "2026-10-28 09:18"   # practice now
+    python -m marketlens.trading.forward --strategy 3                              # your saved strategy id 3
     python -m marketlens.trading.forward --strategy 3 --once                       # one cycle (testing)
-    python -m marketlens.trading.forward --strategy 3 --once --at "2026-10-28 09:25"   # DEMO at a set time
+
+`--strategy demo` uses a built-in practice strategy (the 9:20 NIFTY short straddle) on DEMO prices.
+When your own strategies are saved, replace `demo` with their id from the Forward Test page.
 
 Every minute in market hours:
   1. Options strategy (saved from the Options Backtester): take an option-chain snapshot (Dhan, or
@@ -176,6 +179,30 @@ def load_strategy(strategy_id: int, url: str | None = None) -> tuple[str, str, o
     raise ValueError(f"Strategy {name!r} was not saved by the Options Backtester or as an indicator strategy")
 
 
+# ---------------------------------------------------------------- the built-in practice strategy
+
+DEMO_STRATEGY_NAME = "DEMO 9:20 short straddle (practice)"
+
+
+# Put the practice strategy in the Strategy Library (once) and return its id.
+def ensure_demo_strategy(url: str | None = None) -> int:
+    """The 9:20 NIFTY short straddle template (SL 25% per leg). It always runs on DEMO prices."""
+    today = dt.date.today()
+    settings = ob.template_settings("920_straddle", "NIFTY", today, today)
+    return ob.save_backtest_strategy(DEMO_STRATEGY_NAME, settings, url=url,
+                                     notes="Built-in practice strategy: always uses DEMO prices.")
+
+
+# The id from --strategy: a number, or "demo" for the built-in practice strategy.
+def resolve_strategy(value: str, url: str | None = None) -> int:
+    if str(value).strip().lower() == "demo":
+        return ensure_demo_strategy(url)
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"--strategy must be a number from the Forward Test page, or 'demo' (not {value!r})")
+
+
 # ---------------------------------------------------------------- live minute candles
 
 class LiveMinutes:
@@ -276,6 +303,9 @@ class ForwardRunner:
                  clock=None, data_dir: Path | None = None):
         self.strategy_id, self.url = strategy_id, url
         self.kind, self.name, self.strategy = load_strategy(strategy_id, url)
+        if self.name == DEMO_STRATEGY_NAME and client is None:     # the practice strategy: always DEMO prices
+            from marketlens.broker.demo_data import DemoDataClient
+            client = DemoDataClient(moving=True)
         self.client = client or live_client()
         self.clock = clock or (lambda: dt.datetime.now(IST))
         self.data_dir = data_dir or DATA_DIR
@@ -670,11 +700,17 @@ def _seconds_to_next_minute(now: dt.datetime) -> float:
 # Command line: python -m marketlens.trading.forward --strategy ID [--capital X] [--once] [--at TIME]
 def main(argv: list[str] | None = None, url: str | None = None, client=None) -> int:
     parser = argparse.ArgumentParser(description="Forward-test a saved strategy with virtual money.")
-    parser.add_argument("--strategy", type=int, required=True, help="Strategy Library id")
+    parser.add_argument("--strategy", required=True,
+                        help="Strategy Library id (shown on the Forward Test page), or 'demo' for the practice strategy")
     parser.add_argument("--capital", type=float, default=None, help="virtual capital (default: PAPER_CAPITAL)")
     parser.add_argument("--once", action="store_true", help="run a single cycle and stop (for testing)")
     parser.add_argument("--at", default=None, help='DEMO only: pretend it is this time, e.g. "2026-10-28 09:25"')
     args = parser.parse_args(argv)
+    try:
+        args.strategy = resolve_strategy(args.strategy, url)
+    except ValueError as err:
+        print(err)
+        return 2
     if config.TRADING_MODE == "live":
         log.warning("TRADING_MODE=live, but forward tests always use the paper broker (virtual money).")
     clock = None
@@ -687,7 +723,8 @@ def main(argv: list[str] | None = None, url: str | None = None, client=None) -> 
         print(f"Strategy {args.strategy} is already running (pid {current['params'].get('pid')}).")
         return 1
     runner = ForwardRunner(args.strategy, args.capital, client=client, url=url, clock=clock)
-    print(f"Forward test of '{runner.name}' ({runner.kind}) started. Press Ctrl+C to stop.")
+    print(f"Forward test of '{runner.name}' (strategy id {args.strategy}, {runner.kind}) started. "
+          "Press Ctrl+C to stop.")
     while True:
         result = runner.cycle()
         print(f"{dt.datetime.now(IST):%H:%M:%S} {result.get('state')}: {result.get('message', result.get('error', ''))}",

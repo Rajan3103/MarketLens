@@ -1,35 +1,81 @@
 # MarketLens
 
-Market Analytics System with Algorithmic Trading Framework for Indian markets (NSE).
+Market Analytics System with an Algorithmic Trading Framework for Indian markets (NSE / BSE),
+similar in spirit to AlgoTest and StockMock.
 
-MarketLens downloads stock, ETF and options data, shows it in dashboards, backtests
-momentum and options strategies, and (later) places orders through the Dhan API
-with Telegram alerts, running on an AWS server.
+MarketLens downloads index, stock, ETF and options data into PostgreSQL, shows live market
+dashboards, builds and backtests option strategies minute by minute, replays past days for
+practice, and forward-tests strategies on the live market with virtual money. Later it will
+place real orders through the **Dhan** API, send Telegram alerts and run on an AWS server.
 
 > Everything in this app is historical analysis for learning.
 > It is **not** investment advice or a live trading recommendation.
 
+**Safety first:** trading is **paper (virtual money) by default**. Real orders will only ever be
+possible with `TRADING_MODE=live` in `.env`. Every page works without API keys, using clearly
+labelled **DEMO** data.
+
+---
+
 ## What works today
 
 The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
+✅ = ready · 🛠️ = partly ready · 📋 = upcoming
 
-| Group | Module | Status |
-| --- | --- | --- |
-| Start | Home, Settings & Status (which keys are set, PAPER/LIVE mode) | Ready |
-| Market & data | 1. Live Market Overview (index cards, chart with moving averages and crossover signals) | Ready |
-| | 2. Option Chain & Strategy Builder | Strategy builder (straddle/strangle payoff) ready; option chain planned |
-| | 3. Options Data Downloader | Equity/ETF/index CSV download ready; Dhan options data planned |
-| Options testing | 4. Options Backtester, 5. Option Simulator, 6. Forward Test / Paper Trading | Planned |
-| Indicator & portfolio | 7. Signals & Indicator Strategy Builder | Pine Script export ready; rules and webhooks planned |
-| | 8. Momentum Engine Backtest, 9. ETF Momentum Portfolio | Planned |
-| Control centre | 10. Personal Analytics & Strategy Library, 11. Live Algo Trading & Bot Monitor, 12. Telegram Bot Control Panel | Planned |
+| Group | # | Module | What it does | Status |
+| --- | --- | --- | --- | --- |
+| Start | – | Home, Settings & Status | Module overview; which keys are set, PAPER/LIVE mode, database test button | ✅ |
+| **Market & data** | 1 | Live Market Overview | Nifty, Bank Nifty, Fin Nifty, Sensex, India VIX cards; Nifty 50 gainers/losers and breadth (auto-refresh in market hours); sector heatmap; chart with moving averages, RSI and volume | ✅ |
+| | 2 | Option Chain & Strategy Builder | Chain with PCR, max pain, ATM straddle, expected move, OI charts. Builder with 12 templates, editable legs, payoff today / at expiry, net Greeks, probability of profit, margin (Dhan or approximate); save / backtest / paper trade | ✅ |
+| | 3 | Historical Data Downloader | Option-chain snapshots, expired options (1-minute, ATM±10), stocks / ETFs / indices daily, Dhan intraday candles; "What is stored" | ✅ |
+| **Options testing** | 4 | Options Backtester | Multi-leg strategies on stored 1-minute option data (see below); 5 ready templates; equity curve, drawdown, day / month heatmaps, trade list with exit reasons, Excel / CSV | ✅ |
+| | 5 | Option Simulator | Replay a stored day minute by minute and trade it with virtual money | ✅ |
+| | 6 | Forward Test / Paper Trading | Run a saved strategy every minute on live Dhan (or DEMO) prices through the paper broker, as a background process; history vs backtest | ✅ (paper only) |
+| **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Pine Script export ready; simple EMA-cross / RSI strategies can be forward-tested | 🛠️ |
+| | 8 | Momentum Engine Backtest | | 📋 |
+| | 9 | ETF Momentum Portfolio | | 📋 |
+| **Control centre** | 10 | Personal Analytics & Strategy Library | Strategies are already saved to the library from modules 2, 4 and 6 | 🛠️ |
+| | 11 | Live Algo Trading & Bot Monitor | | 📋 |
+| | 12 | Telegram Bot Control Panel | | 📋 |
 
-Planned pages already appear in the menu and list what they will do.
+### Highlights of the ready modules
 
-## Setup, step by step (Windows + VS Code)
+**4. Options Backtester**
+- Underlying (NIFTY, BANKNIFTY, FINNIFTY, SENSEX), date range, weekly/monthly and current/next
+  expiry, entry and exit time, days of the week, skip expiry day.
+- Legs: buy/sell, CE/PE, lots; strike by **ATM ± N**, **closest premium** or **closest delta**.
+- Per leg: **SL and target** in %, points or Rs (checked on each minute's high/low; if both are
+  touched in one minute the SL is assumed and noted), **trailing SL**, **lock profit**,
+  **re-entry** (at cost, or re-execute with a new strike) and "move other legs' SL to cost".
+- Strategy level: **range breakout** entry (on the index or each leg's own price),
+  **overall M2M** stop loss / target / lock / trailing.
+- **No look-ahead:** a decision at 09:20 uses the close of the 09:19 candle.
+- Fast: one year of NIFTY 1-minute data with a 4-leg strategy runs in about 25–30 seconds.
+- Ready templates: 9:20 short straddle, 0.20-delta short strangle, Rs 50 premium strangle,
+  iron condor, breakout option buying.
+- Buttons: Save to Strategy Library, Open a day in the Simulator, Start forward test.
 
-You need Python 3.11 or newer and Git. Check them in a terminal
-(VS Code: menu **Terminal > New Terminal**):
+**5. Option Simulator**
+- Play, Pause, +1 / +5 minutes, speed 1x–30x, jump to a time, time slider.
+- Shows only what was known at that minute: index candles so far, option chain with LTP / IV /
+  delta / OI, mini payoff chart of open positions.
+- Virtual orders with optional SL / target that trigger as the replay moves; Exit all;
+  costs from `costs.py`; live P&L curve; end-of-day summary; sessions saved and listed.
+
+**6. Forward Test / Paper Trading**
+- Runs a strategy saved from the backtester (same rule code, so live and backtest behave the
+  same) or a simple indicator strategy, every minute in market hours.
+- Runs as a background process, so it keeps going when the browser is closed:
+  `python -m marketlens.trading.forward --strategy <id>`.
+- Status (waiting for entry time / watching for breakout / in trade / done for the day),
+  open legs, today's trades with exit reasons, day-by-day history next to the backtest.
+
+---
+
+## Setup, step by step (Windows + VS Code, or Ubuntu)
+
+You need **Python 3.11 or newer**, **Git** and **PostgreSQL**. Check Python and Git in a
+terminal (VS Code: menu **Terminal > New Terminal**):
 
 ```bash
 python --version
@@ -54,7 +100,7 @@ Turn it on. You must do this every time you open a new terminal:
 ```bash
 # Windows (PowerShell)
 .venv\Scripts\Activate.ps1
-# Mac / Linux
+# Ubuntu / Mac
 source .venv/bin/activate
 ```
 
@@ -68,18 +114,29 @@ If PowerShell says scripts are disabled, run this once and try again:
 pip install -r requirements.txt
 ```
 
-### 4. Add your keys (optional for now)
+The same `requirements.txt` works on Windows and Ubuntu. Every package has a comment saying
+what it is for.
 
-Copy `.env.example` to a new file called `.env` and fill in your Dhan and
-Telegram details (Dhan is the only broker MarketLens uses). Each line in `.env.example` has a comment saying what it is for.
-The `.env` file stays on your computer and is never uploaded.
-The app works without it: every setting has a safe default (paper trading,
-demo mode on), and **Settings & Status** shows which keys are still missing.
-Restart the app after changing `.env`.
+### 4. Add your keys (optional)
+
+Copy `.env.example` to a new file called `.env` and fill in what you have. Each line in
+`.env.example` has a comment saying what it is for. The `.env` file stays on your computer
+and is never uploaded. Restart the app after changing it.
+
+| Setting | What it is for | Without it |
+| --- | --- | --- |
+| `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` | Live option chain, expired options data, margin, (later) orders. Dhan is the only broker | Clearly labelled DEMO data |
+| `DATABASE_URL`, `TEST_DATABASE_URL` | Your PostgreSQL database and a separate test database | Database pages show how to fix it |
+| `TRADING_MODE` | `paper` (default) or `live` | Paper |
+| `PAPER_CAPITAL` | Virtual money for the paper broker (default 500000) | Rs 5,00,000 |
+| `MAX_DAILY_LOSS_RS`, `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND` | Risk limits | Safe defaults |
+| `TELEGRAM_*`, `WEBHOOK_SECRET` | Upcoming modules 7 and 12 | Not used yet |
+
+**Settings & Status** shows which keys are still missing.
 
 ### 5. Set up the database (PostgreSQL)
 
-MarketLens keeps its data in **PostgreSQL** (17 or newer). Install it from
+MarketLens keeps its data in **PostgreSQL** (17 or newer; 18 works). Install it from
 https://www.postgresql.org/download/ (Windows) or with `sudo apt install postgresql`
 (Ubuntu), and remember the password you choose for the `postgres` user.
 
@@ -96,12 +153,30 @@ Then create the database and all its tables with one command:
 python scripts/init_db.py
 ```
 
-It creates the `marketlens` database if it is missing, runs the Alembic
-migrations and prints every table with its row count. It is safe to run again.
-If something is wrong (PostgreSQL not running, wrong password) it tells you how to fix it.
-**Settings & Status** also has a *Test database connection* button.
+It creates the database if it is missing, runs the Alembic migrations and prints every table
+with its row count. It is safe to run again. **Settings & Status** also has a
+*Test database connection* button.
 
-When `marketlens/models.py` changes later, make and apply a new migration:
+**After every `git pull`, bring the tables up to date:**
+
+```bash
+alembic upgrade head
+```
+
+Migrations so far:
+
+| Migration | What it adds |
+| --- | --- |
+| 0001 | The first 24 tables (instruments, prices, options, strategies, backtests, orders, positions, ...) |
+| 0002 | `price_bars` for index / stock / futures candles; futures contracts |
+| 0003 | `download_progress` (resume long downloads); DEMO flags |
+| 0004 | Backtest trades keep their symbol and costs |
+| 0005 | Backtest trades keep a note (e.g. "SL and target both touched: assumed SL") |
+| 0006 | Simulator orders keep symbol, costs and reason |
+| 0007 | Orders and positions keep symbol, Security ID, segment, tag, costs (paper broker) |
+| 0008 | One forward-test row per strategy per day, with state, message and heartbeat |
+
+When `marketlens/models.py` changes, make and apply a new migration:
 
 ```bash
 alembic revision --autogenerate -m "what changed"
@@ -115,114 +190,184 @@ python scripts/sync_prices.py --universe etfs --years 10
 python scripts/sync_prices.py --universe nifty200 --years 10
 ```
 
-The first run downloads everything (about 1.5 minutes for Nifty 200 x 10 years);
-later runs only fetch the missing days and take seconds. Run it after market
-close each day. The stock lists live in `data/universe/` (`nifty50.csv`,
-`nifty200.csv`, `etfs.csv`); NSE changes the Nifty lists twice a year, so refresh them with:
+The first run downloads everything (about 1.5 minutes for Nifty 200 × 10 years); later runs
+only fetch the missing days. Run it after market close each day. The stock lists live in
+`data/universe/`; NSE changes the Nifty lists twice a year, so refresh them with:
 
 ```bash
 python scripts/update_universe.py
 ```
 
-### 7. The data downloader page (module 3)
-
-Open **3. Historical Data Downloader** in the app:
-
-| Tab | What it does |
-| --- | --- |
-| **Latest option chain** | Underlying + expiry: chain with OI, IV, Greeks, PCR. *Save snapshot* stores it; CSV / Excel download |
-| **Expired options** | Date range, weekly/monthly, strikes ATM±n, CE/PE: *Download and store* (1-minute bars, progress bar, resumable). Preview any stored day at 1/5/15/25/60 min and export it (or the whole range) as CSV / Excel. **Feeds the Options Backtester and Option Simulator** |
-| **Stocks, ETFs & indices** | One ticker, a list or a whole universe (Nifty 50 / 200 / ETFs): free daily prices from yfinance, stored, charted, exported |
-| **Intraday candles (Dhan)** | Index / futures / stock candles by Security ID (1, 5, 15, 25, 60 min or daily) into a folder you choose |
-
-Below the tabs, **What is stored** lists every instrument with its first date, last date,
-row count and whether it is DEMO data. Without Dhan keys the option and Dhan tabs use
-clearly labelled DEMO data.
-
-### 8. Download option data (for the backtester and simulator)
+### 7. Download option data (for the backtester and simulator)
 
 ```bash
-python scripts/download_options.py index   --underlying NIFTY --from 2026-09-01 --to 2026-10-23
-python scripts/download_options.py expired --underlying NIFTY --from 2026-09-01 --to 2026-10-23
+python scripts/download_options.py index    --underlying NIFTY --from 2026-09-01 --to 2026-10-23
+python scripts/download_options.py expired  --underlying NIFTY --from 2026-09-01 --to 2026-10-23
 python scripts/download_options.py snapshot --underlying NIFTY
 ```
 
 `expired` stores minute bars for ATM-10 .. ATM+10, calls and puts (change with `--width`,
 `--types CE`, `--flag monthly`). Long downloads can be stopped with `Ctrl + C` and run again:
-finished days are skipped. Without Dhan keys the same commands store clearly marked DEMO
-data; the first real Dhan download deletes it.
+finished days are skipped. Without Dhan keys the same commands store clearly marked DEMO data;
+the first real Dhan download deletes it. The same downloads are on page **3** with progress bars.
 
-### 9. Run the app
+### 8. Run the app
 
 ```bash
 streamlit run app.py
 ```
 
-Your browser opens at http://localhost:8501. Use the menu on the left to switch
-dashboards. Press `Ctrl + C` in the terminal to stop the app.
+Your browser opens at http://localhost:8501. Use the menu on the left to switch pages.
+Press `Ctrl + C` in the terminal to stop the app.
+
+### 9. Run a forward test in the background (module 6)
+
+Start it from page **6** (Start / Stop buttons), or from a terminal.
+
+**Practise now with the built-in DEMO strategy** (the 9:20 NIFTY short straddle, SL 25% per leg,
+always on DEMO prices). `demo` adds it to the Strategy Library the first time:
+
+```bash
+python -m marketlens.trading.forward --strategy demo --once --at "2026-10-28 09:18"   # one cycle at a set time
+python -m marketlens.trading.forward --strategy demo                                  # every minute, today
+```
+
+**Later, use your own strategy:** replace `demo` with its id (shown on page 6, e.g. 3):
+
+```bash
+python -m marketlens.trading.forward --strategy 3            # runs every minute in market hours
+python -m marketlens.trading.forward --strategy 3 --once     # one cycle, for testing
+```
+
+`--at` works with DEMO prices only. The log is in `logs/forward_<id>.log`.
+
+---
+
+## A typical workflow
+
+1. **Download** option minutes for a period (page 3 or `download_options.py`).
+2. **Build** a strategy in page 2 (payoff, Greeks) or start from a template in page 4.
+3. **Backtest** it on page 4; study the equity curve, heatmaps and exit reasons.
+4. **Replay** an interesting day in the Simulator (page 5) and practise trading it.
+5. **Save** it to the Strategy Library and **forward-test** it on page 6 with virtual money.
+6. Compare forward-test days with the backtest of the same days (page 6, History tab).
+
+---
 
 ## Running tests
 
-Tests check the calculations (for example moving averages and crossover
-signals) using small made-up price tables, so they need no internet and no keys.
+Tests check every calculation with small hand-made data, so they need no internet and no keys.
 With the virtual environment turned on, run this from the MarketLens folder:
 
 ```bash
-python -m pytest
+python -m pytest -rs
 ```
 
-Add `-v` to see each test by name: `python -m pytest -v`.
+Today: **547 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
-Database tests in `tests/test_db.py` use **`TEST_DATABASE_URL`**, a separate
-database that the tests empty and refill. They never touch `DATABASE_URL`.
-If `TEST_DATABASE_URL` is empty or unreachable those tests are *skipped*;
-add `-rs` to see why: `python -m pytest -rs`.
-Every line should say `PASSED`. Test files live in `tests/` and their names
-start with `test_`.
+- Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
+  refill. They never touch `DATABASE_URL`. If it is empty or unreachable those tests are skipped.
+- Page tests run each Streamlit page headless (no browser) with `streamlit.testing`.
+- Test files live in `tests/` and their names start with `test_`.
 
-## Changing the stock or timeframe
-
-On **1. Live Market Overview**, type any NSE ticker followed by `.NS`
-(for example `TCS.NS`, `INFY.NS`, `HDFCBANK.NS`) and pick a timeframe
-(6 months to 5 years). Indices start with `^`: `^NSEI` is Nifty 50, `^NSEBANK` is Bank Nifty.
+---
 
 ## Folder layout
 
 ```
 MarketLens/
-├── app.py                 # main file: builds the sidebar menu
-├── dashboards/            # one file per dashboard page
-├── marketlens/            # shared code: settings, data download, helpers
-│   ├── config.py          # reads keys from .env
-│   ├── data.py            # downloads prices, adds moving averages
-│   ├── db.py              # PostgreSQL connection, sessions, upsert helper
-│   ├── models.py          # the 24 database tables
-│   ├── broker/            # market_data.py: get_data_client() -> Dhan (keys set) or DEMO
-│   │                      # dhan_data.py (DhanDataClient), demo_data.py (DemoDataClient),
-│   │                      # dhan_instruments.py (Security IDs, lot sizes), dhan_client.py (keys, errors)
-│   ├── options/           # pricing.py (Black-Scholes), expiries.py (expiry-day rules)
-│   ├── ingest/            # prices.py (yfinance daily), historical.py (candles), options.py (option data)
-│   ├── costs.py           # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
-│   ├── utils.py           # @retry and RateLimiter helpers
-│   ├── logger.py          # writes messages to the terminal and logs/marketlens.log
-│   ├── ui.py              # small shared page pieces
-│   └── ingest/, options/, backtest/, simulator/, signals/, momentum/,
-│       broker/, trading/, alerts/, scheduler/, webhook/   # one folder per area (filled in later)
-├── migrations/            # Alembic database migrations (versions/0001_initial_tables.py)
-├── scripts/               # init_db.py, sync_prices.py, update_universe.py
-├── alembic.ini            # Alembic settings (no password: it reads .env)
-├── tests/                 # automatic tests (run with: python -m pytest)
-├── data/universe/         # nifty50.csv, nifty200.csv, etfs.csv (symbol lists)
-├── data/                  # local CSV downloads (not uploaded)
-├── logs/                  # log files (not uploaded)
-├── .streamlit/config.toml # app theme
-├── requirements.txt       # list of packages
-└── .env.example           # template for your private keys
+├── app.py                  # main file: builds the sidebar menu
+├── dashboards/             # one file per page (home, settings, modules 1-12)
+├── marketlens/             # shared code
+│   ├── config.py           # reads keys and settings from .env
+│   ├── db.py, models.py    # PostgreSQL connection and all tables
+│   ├── costs.py            # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
+│   ├── export.py           # CSV / Excel downloads
+│   ├── overview.py         # module 1: cards, movers, breadth, sector heatmap
+│   ├── utils.py, logger.py, ui.py   # @retry / RateLimiter, logging, shared page pieces
+│   ├── broker/             # data clients (Dhan or DEMO), instruments, base.py (Broker interface),
+│   │                       # paper.py (PaperBroker: virtual orders and positions)
+│   ├── ingest/             # downloads into PostgreSQL: prices, candles, option data
+│   ├── options/            # pricing (Black-Scholes, IV, Greeks), expiries, chain, strategies, strike_select
+│   ├── backtest/           # metrics, engine (Trade, BacktestResult), store, charts, report, ui,
+│   │                       # options_bt.py (the options backtester and its rules)
+│   ├── simulator/          # replay.py (replay clock and virtual trading)
+│   ├── trading/            # forward.py (forward-test runner and background process)
+│   ├── signals/            # indicators (SMA, EMA, RSI, ATR, Bollinger, MACD, Supertrend, VWAP)
+│   └── momentum/, alerts/, scheduler/, webhook/   # for the upcoming modules
+├── migrations/             # Alembic migrations 0001 .. 0008
+├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
+├── tests/                  # automatic tests (python -m pytest)
+├── data/universe/          # nifty50.csv, nifty200.csv, etfs.csv
+├── data/                   # local downloads and forward-test minutes (not uploaded)
+├── logs/                   # log files (not uploaded)
+├── requirements.txt        # packages, each with a comment
+└── .env.example            # template for your private keys
 ```
 
-## Adding a new dashboard
+---
 
-1. Create a file in `dashboards/`, for example `dashboards/my_page.py`, starting with `import streamlit as st`.
+## Upcoming features
+
+The order may change; each item is built with the same rules (keys in `.env` only, paper by
+default, DEMO data without keys, tests for every calculation).
+
+### 7. Signals & Indicator Strategy Builder
+- Build rules from indicators without code (e.g. "EMA 9 crosses above EMA 21 and RSI > 50").
+- Backtest them on stocks, indices and ETFs with the shared results report (heatmaps, Excel).
+- Receive **TradingView / Chartink webhooks** (protected by `WEBHOOK_SECRET`) and turn them
+  into paper orders.
+- Export rules as **Pine Script** (already partly ready).
+
+### 8. Momentum Engine Backtest
+- Rank Nifty 50 / Nifty 200 stocks by momentum (returns over several look-backs, volatility
+  adjusted), hold the top N, rebalance monthly or weekly.
+- CAGR, max drawdown, Sharpe, Sortino against Nifty 50, after all costs.
+
+### 9. ETF Momentum Portfolio
+- Rotate among NSE ETFs (equity, gold, international, debt) by momentum with a cash filter.
+- This month's suggested holdings and the rebalancing orders (paper first).
+
+### 10. Personal Analytics & Strategy Library
+- Every saved strategy with its backtests, forward tests and notes in one place.
+- Your own P&L analytics: by day, month, weekday, strategy and instrument; win rate,
+  streaks, drawdown; trade journal.
+
+### 11. Live Algo Trading & Bot Monitor
+- A **Dhan live broker** using the same `Broker` interface as the paper broker, so strategies
+  switch from paper to live without code changes, **only when `TRADING_MODE=live`**.
+- Risk controls before every order: `MAX_DAILY_LOSS_RS` (stop for the day),
+  `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND`, a kill switch.
+- Live view of running bots, orders, positions and errors.
+- Dhan only accepts orders from a whitelisted static IP, so live trading will run on the server.
+
+### 12. Telegram Bot Control Panel
+- Alerts on Telegram: entries, exits, stop losses, daily P&L, errors.
+- Commands: status, positions, P&L, stop a strategy, exit all.
+- Price alerts ("tell me when NIFTY goes above 25,500").
+
+### Platform
+- **Scheduler:** daily price sync, option-data downloads after market close, morning checks.
+- **AWS deployment** (Mumbai region, static IP for Dhan orders) with the app and background
+  processes running all day.
+- **Dhan automatic login** with `DHAN_API_KEY` / `DHAN_API_SECRET` instead of pasting a new
+  access token every day.
+- Index futures in the backtester; changing lot sizes over history.
+
+### Known limits today
+- Forward tests and the simulator need the strategy to be running before the entry time
+  (the minutes before the start are not recorded).
+- The paper broker's "money used" is simple (quantity × average price); real option-selling
+  margin is much higher.
+- One lot size is used for a whole backtest (today's lot size unless you set one).
+
+---
+
+## Adding a new page
+
+1. Create a file in `dashboards/`, for example `dashboards/my_page.py`, starting with
+   `import streamlit as st`.
 2. Add one line for it in the `pages` list in `app.py`:
    `st.Page("dashboards/my_page.py", title="My Page", icon="✨")`
 3. Save. The app reloads and the page appears in the menu.

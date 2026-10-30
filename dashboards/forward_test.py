@@ -81,9 +81,19 @@ with new_tab:
 
 # ---- run ----
 with run_tab:
+    if strategies.empty or fw.DEMO_STRATEGY_NAME not in set(strategies["name"]):
+        d1, d2 = st.columns([3, 1])
+        d1.caption("Practice first: the built-in DEMO strategy (9:20 NIFTY short straddle, SL 25%) always runs on "
+                   "DEMO prices. From a terminal: `python -m marketlens.trading.forward --strategy demo --once`.")
+        if d2.button("➕ Add the DEMO practice strategy", key="f_add_demo"):
+            try:
+                st.session_state["f_pick"] = fw.ensure_demo_strategy()
+                st.rerun()
+            except Exception as err:
+                st.error(f"Could not add it: {err}")
     if strategies.empty:
-        st.info("No strategies to run yet. Save one from the Options Backtester (\"Save to Strategy Library\"), "
-                "or make a quick indicator strategy in the third tab.")
+        st.info("No strategies to run yet. Add the DEMO practice strategy above, save one from the Options "
+                "Backtester (\"Save to Strategy Library\"), or make a quick indicator strategy in the third tab.")
         historical_note()
         st.stop()
     ids = list(strategies["id"])
@@ -107,8 +117,8 @@ with run_tab:
     if c[3].button("⏹ Stop", disabled=not running, key="f_stop", width="stretch"):
         if fw.request_stop(strategy_id):
             st.warning("Stop requested: open positions are closed at the next minute.")
-    st.caption(f"Or from a terminal: `python -m marketlens.trading.forward --strategy {strategy_id}` "
-               "(add `--once` for a single cycle).")
+    st.caption(f"Strategy id **{strategy_id}**. From a terminal: "
+               f"`python -m marketlens.trading.forward --strategy {strategy_id}` (add `--once` for a single cycle).")
 
     # The status panel refreshes itself every 10 seconds.
     @st.fragment(run_every=10)

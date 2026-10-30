@@ -79,3 +79,12 @@ def test_no_strategies(monkeypatch):
     monkeypatch.setattr(fw, "list_strategies", lambda url=None: STRATEGIES.iloc[0:0])
     at = AppTest.from_file(PAGE, default_timeout=60).run()
     assert any("No strategies to run yet" in i.value for i in at.info)
+
+
+# The page offers the DEMO practice strategy when it is not in the library yet.
+def test_add_demo_strategy(calls, monkeypatch):
+    added = []
+    monkeypatch.setattr(fw, "ensure_demo_strategy", lambda url=None: added.append(1) or 7)
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.button(key="f_add_demo").click().run()
+    assert added == [1] and not at.exception
