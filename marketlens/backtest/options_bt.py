@@ -859,6 +859,54 @@ def leg_from_values(values: dict) -> LegSpec:
     return LegSpec(**{k: val for k, val in v.items() if k in known})
 
 
+# ---- quick strategy types (the radio buttons above the legs) ----
+
+QUICK_KINDS = {"straddle": "Short straddle", "strangle": "Short strangle", "premium": "Premium based",
+               "custom": "Custom legs"}
+STRANGLE_OFFSETS = list(range(1, 11))          # ATM+1 .. ATM+10 for the call, ATM-1 .. ATM-10 for the put
+
+
+# The strike rule of the CE or PE leg for a quick type: ("ATM", N) or ("PREMIUM", Rs).
+def quick_strike(kind: str, option_type: str, ce_offset: int = 2, pe_offset: int = 2,
+                 ce_premium: float = 100.0, pe_premium: float = 100.0) -> tuple[str, float]:
+    """straddle: both ATM. strangle: CE ce_offset strikes ABOVE ATM, PE pe_offset strikes BELOW ATM
+    (both out of the money). premium: the strike whose price is nearest the given premium at entry."""
+    ce = option_type.upper() == "CE"
+    if kind == "straddle":
+        return "ATM", 0
+    if kind == "strangle":
+        n = int(ce_offset if ce else pe_offset)
+        if n not in STRANGLE_OFFSETS:
+            raise ValueError("Strangle strikes must be 1 to 10 strikes away from ATM")
+        return "ATM", n if ce else -n
+    if kind == "premium":
+        premium = float(ce_premium if ce else pe_premium)
+        if premium <= 0:
+            raise ValueError("Enter a premium above 0 for both CE and PE")
+        return "PREMIUM", premium
+    raise ValueError(f"Unknown quick type {kind!r}")
+
+
+# Which quick type a list of legs is (custom when it is not one SELL CE + one SELL PE of a quick shape).
+def quick_kind_of(legs: list) -> tuple[str, dict]:
+    """Returns (kind, settings) with settings ce_offset, pe_offset, ce_premium, pe_premium."""
+    found = {"ce_offset": 2, "pe_offset": 2, "ce_premium": 100.0, "pe_premium": 100.0}
+    legs = [leg if isinstance(leg, LegSpec) else LegSpec(**{k: v for k, v in leg.items()
+                                                             if k in LegSpec.__dataclass_fields__}) for leg in legs]
+    if len(legs) != 2 or {(leg.side, leg.option_type) for leg in legs} != {("SELL", "CE"), ("SELL", "PE")}:
+        return "custom", found
+    ce = next(leg for leg in legs if leg.option_type == "CE")
+    pe = next(leg for leg in legs if leg.option_type == "PE")
+    if ce.strike_rule == pe.strike_rule == "ATM":
+        if ce.value == 0 and pe.value == 0:
+            return "straddle", found
+        if int(ce.value) in STRANGLE_OFFSETS and -int(pe.value) in STRANGLE_OFFSETS:
+            return "strangle", {**found, "ce_offset": int(ce.value), "pe_offset": -int(pe.value)}
+    if ce.strike_rule == pe.strike_rule == "PREMIUM":
+        return "premium", {**found, "ce_premium": float(ce.value), "pe_premium": float(pe.value)}
+    return "custom", found
+
+
 # Legs from the Strategy builder (exact strikes) as ATM +/- N rules, using the spot when it was built.
 def legs_from_builder(handoff: dict) -> list[LegSpec]:
     step = STRIKE_STEPS.get(handoff["underlying"].upper(), 50)

@@ -31,7 +31,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | **Options testing** | 4 | Options Backtester | Multi-leg strategies on stored 1-minute option data (see below); 5 ready templates; equity curve, drawdown, day / month heatmaps, trade list with exit reasons, Excel / CSV | ✅ |
 | | 5 | Option Simulator | Replay a stored day minute by minute and trade it with virtual money | ✅ |
 | | 6 | Forward Test / Paper Trading | Run a saved strategy every minute on live Dhan (or DEMO) prices through the paper broker, as a background process; history vs backtest | ✅ (paper only) |
-| **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Pine Script export ready; simple EMA-cross / RSI strategies can be forward-tested | 🛠️ |
+| **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Indicator rules without code (AND / OR); backtest with entry / exit markers; scanner; Pine Script v6 export with webhook alerts; webhook receiver (FastAPI) that saves alerts, sends Telegram messages and places paper orders for "auto" strategies | ✅ |
 | | 8 | Momentum Engine Backtest | | 📋 |
 | | 9 | ETF Momentum Portfolio | | 📋 |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategies are already saved to the library from modules 2, 4 and 6 | 🛠️ |
@@ -43,6 +43,9 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 **4. Options Backtester**
 - Underlying (NIFTY, BANKNIFTY, FINNIFTY, SENSEX), date range, weekly/monthly and current/next
   expiry, entry and exit time, days of the week, skip expiry day.
+- **Strategy type** radio: **Short straddle** (ATM call + put), **Short strangle** (CE ATM+1 … ATM+10
+  and PE ATM-1 … ATM-10 from drop-downs) or **Premium based** (enter a CE and a PE premium; at the
+  entry time the strikes nearest those premiums are sold), or **Custom legs** for anything else.
 - Legs: buy/sell, CE/PE, lots; strike by **ATM ± N**, **closest premium** or **closest delta**.
 - Per leg: **SL and target** in %, points or Rs (checked on each minute's high/low; if both are
   touched in one minute the SL is assumed and noted), **trailing SL**, **lock profit**,
@@ -69,6 +72,24 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
   `python -m marketlens.trading.forward --strategy <id>`.
 - Status (waiting for entry time / watching for breakout / in trade / done for the day),
   open legs, today's trades with exit reasons, day-by-day history next to the backtest.
+
+**7. Signals & Indicator Strategy Builder**
+- **Build & backtest:** condition rows like "EMA(9) crosses above EMA(21)" or "RSI(14) > 50", joined
+  with AND / OR, on SMA, EMA, RSI, MACD, Bollinger, Supertrend, VWAP, ATR and prices. Any NSE symbol,
+  daily or 1–60 minute candles, SL / target %, costs. A rule true at a candle close fills at the next
+  open. Chart with the indicators and entry / exit markers, plus the full results report.
+- **Scanner:** where the entry rule is true on the latest daily candle across Nifty 50, Nifty 200,
+  ETFs or your own list (a historical signal, not a recommendation).
+- **Pine Script export:** the same rules as TradingView Pine Script v6 (inputs for every setting,
+  Indian costs, alert() calls with MarketLens webhook JSON and a secret placeholder). Every
+  generated script is checked by a validator; download as .pine; 5-step TradingView guide.
+- **Webhook alerts:** your webhook address (this computer now, the AWS address later), whether
+  `WEBHOOK_SECRET` is set, the JSON for TradingView and Chartink, and the last 50 events.
+- **Save to Strategy Library**, optionally with **Auto**: webhook alerts naming the strategy then
+  place paper orders by themselves.
+- **Webhook receiver** (`python -m marketlens.webhook.server`): checks the secret (401 if wrong),
+  ignores the same alert repeated within 10 s, saves every event and a signal, sends a Telegram
+  message, and places a paper order for "auto" strategies.
 
 ---
 
@@ -241,6 +262,43 @@ python -m marketlens.trading.forward --strategy 3 --once     # one cycle, for te
 
 `--at` works with DEMO prices only. The log is in `logs/forward_<id>.log`.
 
+### 10. Receive TradingView / Chartink alerts (module 7)
+
+1. Put a long random secret in `.env` (at least 24 characters). Make one with:
+
+   ```powershell
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+
+   and add the line `WEBHOOK_SECRET=<what it printed>` to `.env`.
+
+2. Start the receiver (a second terminal; it runs until `Ctrl + C`):
+
+   ```bash
+   python -m marketlens.webhook.server
+   ```
+
+   Check it: open http://localhost:8000/health (it answers `{"status": "ok", ...}`).
+
+3. Send a fake alert from PowerShell (replace `YOUR_SECRET` with your `WEBHOOK_SECRET`):
+
+   ```powershell
+   $body = @{ secret = "YOUR_SECRET"; strategy = "EMA cross"; symbol = "RELIANCE"; action = "BUY"; qty = 10; price = 2501.5; note = "test alert" } | ConvertTo-Json
+   Invoke-RestMethod -Uri "http://localhost:8000/webhook/tradingview" -Method Post -ContentType "application/json" -Body $body
+   ```
+
+   The answer is `status: ok` with the new signal's id. Sending it again within 10 seconds answers
+   `duplicate`; a wrong secret answers **401**. The event appears on page 7, tab **Webhook alerts**.
+   A Chartink-style alert: `-Uri "http://localhost:8000/webhook/chartink?secret=YOUR_SECRET"` with
+   `@{ stocks = "RELIANCE,TCS"; trigger_prices = "2501.5,3900.1"; scan_name = "EMA cross" }`.
+
+**Why real TradingView alerts only work after the AWS step:** TradingView sends webhooks from the
+internet, so the address must be public, use **port 80 (http) or 443 (https)**, and HTTPS is
+strongly recommended so the secret is encrypted on the way. `localhost` is only reachable from your
+own computer. On the AWS server (with its static IP, a domain name and an HTTPS certificate) the
+same receiver runs behind HTTPS and TradingView can reach it. Until then, test with the fake alerts
+above.
+
 ---
 
 ## A typical workflow
@@ -263,7 +321,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **547 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **636 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -293,8 +351,11 @@ MarketLens/
 │   ├── backtest/           # metrics, engine (Trade, BacktestResult), store, charts, report, ui,
 │   │                       # options_bt.py (the options backtester and its rules)
 │   ├── simulator/          # replay.py (replay clock and virtual trading)
-│   ├── trading/            # forward.py (forward-test runner and background process)
-│   ├── signals/            # indicators (SMA, EMA, RSI, ATR, Bollinger, MACD, Supertrend, VWAP)
+│   ├── trading/            # forward.py (forward-test runner), orders.py (signal -> paper order)
+│   ├── signals/            # indicators, rules.py (conditions), backtest.py (backtest, chart, scanner),
+│   │                       # pine.py (Pine Script v6 export + validator)
+│   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
+│   ├── alerts/             # telegram.py (send a Telegram message)
 │   └── momentum/, alerts/, scheduler/, webhook/   # for the upcoming modules
 ├── migrations/             # Alembic migrations 0001 .. 0008
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
@@ -313,12 +374,9 @@ MarketLens/
 The order may change; each item is built with the same rules (keys in `.env` only, paper by
 default, DEMO data without keys, tests for every calculation).
 
-### 7. Signals & Indicator Strategy Builder
-- Build rules from indicators without code (e.g. "EMA 9 crosses above EMA 21 and RSI > 50").
-- Backtest them on stocks, indices and ETFs with the shared results report (heatmaps, Excel).
-- Receive **TradingView / Chartink webhooks** (protected by `WEBHOOK_SECRET`) and turn them
-  into paper orders.
-- Export rules as **Pine Script** (already partly ready).
+### 7. Signals & Indicator Strategy Builder (remaining)
+- Forward-testing rules built on this page (module 6 runs EMA-cross / RSI strategies today).
+- A public HTTPS address for the webhook receiver (part of the AWS step).
 
 ### 8. Momentum Engine Backtest
 - Rank Nifty 50 / Nifty 200 stocks by momentum (returns over several look-backs, volatility

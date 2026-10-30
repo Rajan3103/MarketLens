@@ -11,5 +11,8 @@ psycopg[binary]>=3.2 # PostgreSQL driver (psycopg 3); [binary] = no compiler nee
 alembic>=1.13        # database migrations: creates and updates the tables
 dhanhq>=2.3          # official Dhan API library: historical candles, option chain, orders
 openpyxl>=3.1        # writes Excel (.xlsx) files for the download buttons
+fastapi>=0.115       # the webhook receiver: TradingView / Chartink alerts arrive here (module 7)
+uvicorn>=0.30        # runs the FastAPI webhook receiver as a web server
+httpx>=0.27          # lets the tests call the webhook receiver (FastAPI TestClient)
 tzdata>=2024.1       # time zone data (Asia/Kolkata) for Windows, which has none built in
 pytest>=8.0          # runs the automatic tests in the tests/ folder

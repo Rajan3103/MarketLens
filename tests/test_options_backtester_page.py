@@ -88,6 +88,7 @@ def test_templates(fake_db):
 
 def test_add_duplicate_remove(fake_db):
     at = open_page()
+    at.radio(key="quick_kind_1").set_value("custom").run()          # the leg buttons are in Custom legs
     first = at.session_state["bt_legs"][0]["uid"]
     at.number_input(key=f"leg_{first}_sl").set_value(40.0).run()
     at.button(key=f"leg_{first}_dup").click().run()
@@ -142,3 +143,57 @@ def test_save_to_library(fake_db, monkeypatch):
     at.button(key="bt_save").click().run()
     assert saved["name"] == "Straddle 920" and len(saved["s"].legs) == 2
     assert any("Saved 'Straddle 920'" in s.value for s in at.success)
+
+
+# ---- the strategy type radio: short straddle / short strangle / premium based ----
+
+# The legs the page would run (the settings built from the boxes).
+def page_legs(at: AppTest):
+    at.button(key="bt_run").click().run()
+    return [(leg.side, leg.option_type, leg.strike_rule, leg.value) for leg in at.session_state["bt_settings"].legs]
+
+
+def test_strategy_type_radio(fake_db):
+    at = open_page()
+    assert at.radio(key="quick_kind_1").value == "straddle"                     # the 9:20 straddle opens first
+    assert page_legs(at) == [("SELL", "CE", "ATM", 0), ("SELL", "PE", "ATM", 0)]
+    assert not any(b.key and b.key.endswith("_dup") for b in at.button)         # no leg buttons in quick types
+    # Short strangle: CE ATM+3, PE ATM-2 (both out of the money)
+    at.radio(key="quick_kind_1").set_value("strangle").run()
+    assert at.selectbox(key="q_ce_offset_1").options == [f"ATM+{n}" for n in range(1, 11)]
+    assert at.selectbox(key="q_pe_offset_1").options == [f"ATM-{n}" for n in range(1, 11)]
+    at.selectbox(key="q_ce_offset_1").set_value(3)
+    at.selectbox(key="q_pe_offset_1").set_value(2).run()
+    assert page_legs(at) == [("SELL", "CE", "ATM", 3), ("SELL", "PE", "ATM", -2)]
+    # Premium based: the strikes nearest Rs 100 (CE) and Rs 120 (PE)
+    at.radio(key="quick_kind_1").set_value("premium").run()
+    at.number_input(key="q_ce_premium_1").set_value(100.0)
+    at.number_input(key="q_pe_premium_1").set_value(120.0).run()
+    assert page_legs(at) == [("SELL", "CE", "PREMIUM", 100.0), ("SELL", "PE", "PREMIUM", 120.0)]
+    assert not at.exception and at.session_state["bt_result"].extras["days_traded"] == 5
+
+
+# The SL typed on a leg stays when the strategy type changes; extra legs go when leaving Custom.
+def test_switching_type_keeps_leg_settings(fake_db):
+    at = open_page()
+    at.selectbox(key="bt_template").set_value("iron_condor").run()
+    at.button[0].click().run()                                                   # Load template
+    v = at.session_state["bt_ver"]
+    assert at.radio(key=f"quick_kind_{v}").value == "custom" and leg_count(at) == 4
+    ce = at.session_state["bt_legs"][0]["uid"]
+    at.number_input(key=f"leg_{ce}_sl").set_value(35.0).run()
+    at.radio(key=f"quick_kind_{v}").set_value("straddle").run()
+    assert leg_count(at) == 2
+    legs = at.session_state["bt_legs"]
+    assert legs[0]["uid"] == ce and at.number_input(key=f"leg_{ce}_sl").value == 35.0
+    assert page_legs(at) == [("SELL", "CE", "ATM", 0), ("SELL", "PE", "ATM", 0)]
+
+
+# Templates set the radio: the Rs 50 premium strangle opens as "Premium based" with 50 / 50.
+def test_template_sets_type(fake_db):
+    at = open_page()
+    at.selectbox(key="bt_template").set_value("premium_strangle").run()
+    at.button[0].click().run()
+    v = at.session_state["bt_ver"]
+    assert at.radio(key=f"quick_kind_{v}").value == "premium"
+    assert at.number_input(key=f"q_ce_premium_{v}").value == 50.0 and at.number_input(key=f"q_pe_premium_{v}").value == 50.0

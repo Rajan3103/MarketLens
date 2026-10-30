@@ -31,8 +31,10 @@ VALUE_STEP = {"ATM": 1.0, "PREMIUM": 5.0, "DELTA": 0.05}
 def load_into_form(settings: ob.OptionsBacktestSettings):
     st.session_state["bt_form"] = {k: getattr(settings, k) for k in ob.OptionsBacktestSettings.__dataclass_fields__
                                    if k not in ("legs", "costs", "name")}
+    kind, quick = ob.quick_kind_of(settings.legs)
+    st.session_state["bt_form"].update({"quick_kind": kind, **quick})
     st.session_state["bt_legs"] = []
-    for leg in settings.legs:
+    for leg in sorted(settings.legs, key=lambda x: x.option_type) if kind != "custom" else settings.legs:
         add_leg(asdict(leg))
     st.session_state["bt_ver"] = st.session_state.get("bt_ver", 0) + 1
 
@@ -43,6 +45,26 @@ def add_leg(values: dict | None = None, after: int | None = None):
     row = {**(values or NEW_LEG), "uid": st.session_state["bt_uid"]}
     legs = st.session_state.setdefault("bt_legs", [])
     legs.insert(len(legs) if after is None else after + 1, row)
+
+
+# Strategy type changed: straddle / strangle / premium use exactly one SELL CE and one SELL PE leg.
+def set_quick_kind():
+    kind = st.session_state[f"quick_kind_{st.session_state['bt_ver']}"]
+    if kind == "custom":
+        return
+    rows = [(leg, leg_values(leg)) for leg in st.session_state["bt_legs"]]
+    kept = []
+    for option_type in ("CE", "PE"):
+        found = next(((leg, vals) for leg, vals in rows if vals["side"] == "SELL" and vals["option_type"] == option_type),
+                     None)
+        if found:
+            kept.append(found[0])
+        else:                                    # a new leg, with the other leg's SL settings when there is one
+            other = next((vals for _, vals in rows if vals["side"] == "SELL"), NEW_LEG)
+            st.session_state["bt_uid"] = st.session_state.get("bt_uid", 0) + 1
+            kept.append({**{k: v for k, v in other.items() if k != "uid"}, "side": "SELL",
+                         "option_type": option_type, "uid": st.session_state["bt_uid"]})
+    st.session_state["bt_legs"] = kept
 
 
 # Remove the leg row with this id.
@@ -160,6 +182,36 @@ except Exception:
 
 # ---- 2. legs ----
 st.subheader("2. Legs")
+kinds = list(ob.QUICK_KINDS)
+kind = st.radio("Strategy type", kinds, index=kinds.index(form.get("quick_kind", "custom")), horizontal=True,
+                format_func=ob.QUICK_KINDS.get, key=f"quick_kind_{v}", on_change=set_quick_kind)
+quick = kind != "custom"
+ce_offset, pe_offset = form.get("ce_offset", 2), form.get("pe_offset", 2)
+ce_premium, pe_premium = form.get("ce_premium", 100.0), form.get("pe_premium", 100.0)
+with st.container(border=True):
+    if kind == "straddle":
+        st.caption("**Short straddle:** sells the ATM call and the ATM put at the entry time each day.")
+    elif kind == "strangle":
+        q1, q2, q3 = st.columns([1, 1, 2])
+        ce_offset = q1.selectbox("CE strike", ob.STRANGLE_OFFSETS, index=ob.STRANGLE_OFFSETS.index(ce_offset),
+                                 format_func=lambda n: f"ATM+{n}", key=f"q_ce_offset_{v}")
+        pe_offset = q2.selectbox("PE strike", ob.STRANGLE_OFFSETS, index=ob.STRANGLE_OFFSETS.index(pe_offset),
+                                 format_func=lambda n: f"ATM-{n}", key=f"q_pe_offset_{v}")
+        q3.caption(f"**Short strangle:** sells the call {ce_offset} strike(s) above ATM and the put {pe_offset} "
+                   "strike(s) below ATM (both out of the money), using ATM at the entry time each day. "
+                   "One strike = the strike gap (NIFTY 50 points, BANKNIFTY 100).")
+    elif kind == "premium":
+        q1, q2, q3 = st.columns([1, 1, 2])
+        ce_premium = q1.number_input("CE premium (Rs)", min_value=0.05, value=float(ce_premium), step=5.0,
+                                     key=f"q_ce_premium_{v}")
+        pe_premium = q2.number_input("PE premium (Rs)", min_value=0.05, value=float(pe_premium), step=5.0,
+                                     key=f"q_pe_premium_{v}")
+        q3.caption(f"**Premium based:** at the entry time each day, sells the call whose price is nearest "
+                   f"Rs {ce_premium:g} and the put whose price is nearest Rs {pe_premium:g} (prices known at that "
+                   "minute; only strikes traded in the last 5 minutes). If two strikes are equally near, the one "
+                   "further from ATM is used.")
+    else:
+        st.caption("**Custom legs:** any number of legs, buy or sell, with ATM ± N, premium or delta strikes.")
 st.caption("SL, target, trailing and lock use the leg's unit (% of entry price, price points, or Rs on the whole leg). "
            "0 means off. Trailing: for every X in your favour, move the SL by Y.")
 legs_values = []
@@ -168,16 +220,28 @@ for n, leg in enumerate(st.session_state["bt_legs"], start=1):
     with st.container(border=True):
         r = st.columns([0.55, 0.9, 0.8, 0.8, 1.4, 1.1, 0.45, 0.45])
         r[0].markdown(f"**Leg {n}**")
-        r[1].selectbox("Side", ["SELL", "BUY"], index=["SELL", "BUY"].index(leg["side"]), key=f"leg_{uid}_side")
-        r[2].selectbox("Type", ["CE", "PE"], index=["CE", "PE"].index(leg["option_type"]), key=f"leg_{uid}_option_type")
-        r[3].number_input("Lots", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
-        rule = r[4].selectbox("Strike", list(ob.STRIKE_RULES), index=list(ob.STRIKE_RULES).index(leg["strike_rule"]),
-                              format_func=ob.STRIKE_RULES.get, key=f"leg_{uid}_strike_rule")
-        value = float(leg["value"]) if rule == leg["strike_rule"] else VALUE_DEFAULT[rule]
-        r[5].number_input(VALUE_LABEL[rule], value=value, step=VALUE_STEP[rule], key=f"leg_{uid}_value_{rule}",
-                          format="%.0f" if rule == "ATM" else "%.2f")
-        r[6].button("⧉", key=f"leg_{uid}_dup", help="Duplicate this leg", on_click=duplicate_leg, args=(uid,))
-        r[7].button("✕", key=f"leg_{uid}_del", help="Remove this leg", on_click=remove_leg, args=(uid,))
+        if quick:                                        # the strategy type sets side, type and strike
+            vals = leg_values(leg)
+            rule, value = ob.quick_strike(kind, vals["option_type"], ce_offset, pe_offset, ce_premium, pe_premium)
+            r[1].markdown("SELL")
+            r[2].markdown(vals["option_type"])
+            r[3].number_input("Lots", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
+            r[4].markdown(f"Strike: **{'ATM' if rule == 'ATM' and not value else ''}"
+                          f"{f'ATM{int(value):+d}' if rule == 'ATM' and value else ''}"
+                          f"{f'premium ≈ Rs {value:g}' if rule == 'PREMIUM' else ''}**")
+            r[5].caption("set by the strategy type above")
+        else:
+            r[1].selectbox("Side", ["SELL", "BUY"], index=["SELL", "BUY"].index(leg["side"]), key=f"leg_{uid}_side")
+            r[2].selectbox("Type", ["CE", "PE"], index=["CE", "PE"].index(leg["option_type"]),
+                           key=f"leg_{uid}_option_type")
+            r[3].number_input("Lots", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
+            rule = r[4].selectbox("Strike", list(ob.STRIKE_RULES), index=list(ob.STRIKE_RULES).index(leg["strike_rule"]),
+                                  format_func=ob.STRIKE_RULES.get, key=f"leg_{uid}_strike_rule")
+            value = float(leg["value"]) if rule == leg["strike_rule"] else VALUE_DEFAULT[rule]
+            r[5].number_input(VALUE_LABEL[rule], value=value, step=VALUE_STEP[rule], key=f"leg_{uid}_value_{rule}",
+                              format="%.0f" if rule == "ATM" else "%.2f")
+            r[6].button("⧉", key=f"leg_{uid}_dup", help="Duplicate this leg", on_click=duplicate_leg, args=(uid,))
+            r[7].button("✕", key=f"leg_{uid}_del", help="Remove this leg", on_click=remove_leg, args=(uid,))
         x = st.columns([1.3, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 1.6, 0.8])
         x[0].selectbox("Unit", list(ob.UNITS), index=list(ob.UNITS).index(leg["unit"]), format_func=ob.UNITS.get,
                        key=f"leg_{uid}_unit")
@@ -188,8 +252,14 @@ for n, leg in enumerate(st.session_state["bt_legs"], start=1):
         x[7].selectbox("After SL", list(ob.REENTRY), index=list(ob.REENTRY).index(leg["reentry"]),
                        format_func=ob.REENTRY.get, key=f"leg_{uid}_reentry")
         x[8].number_input("Max re-entries", 0, 20, int(leg["max_reentries"]), key=f"leg_{uid}_max_reentries")
-    legs_values.append(leg_values(leg))
-st.button("➕ Add leg", on_click=add_leg)
+    values = leg_values(leg)
+    if quick:
+        values["side"] = "SELL"
+        values["strike_rule"], values["value"] = ob.quick_strike(kind, values["option_type"], ce_offset, pe_offset,
+                                                                 ce_premium, pe_premium)
+    legs_values.append(values)
+if not quick:
+    st.button("➕ Add leg", on_click=add_leg)
 
 # ---- 3. strategy level ----
 st.subheader("3. Strategy settings")

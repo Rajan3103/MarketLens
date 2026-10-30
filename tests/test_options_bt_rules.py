@@ -334,3 +334,53 @@ def test_save_backtest_strategy(db_url, db_session):
     assert len(load_backtest_strategy("Condor", url=db_url).legs) == 2
     with pytest.raises(ValueError):
         load_backtest_strategy("Missing", url=db_url)
+
+
+# ---- strategy types: short straddle / short strangle / premium based ----
+
+from marketlens.backtest.options_bt import STRANGLE_OFFSETS, quick_kind_of, quick_strike  # noqa: E402
+
+
+def test_quick_strike_rules():
+    assert quick_strike("straddle", "CE") == ("ATM", 0) == quick_strike("straddle", "PE")
+    assert quick_strike("strangle", "CE", ce_offset=3, pe_offset=5) == ("ATM", 3)       # above ATM
+    assert quick_strike("strangle", "PE", ce_offset=3, pe_offset=5) == ("ATM", -5)      # below ATM
+    assert quick_strike("premium", "CE", ce_premium=100, pe_premium=80) == ("PREMIUM", 100)
+    assert quick_strike("premium", "PE", ce_premium=100, pe_premium=80) == ("PREMIUM", 80)
+    assert STRANGLE_OFFSETS == list(range(1, 11))
+    for bad in (dict(kind="strangle", ce_offset=11), dict(kind="premium", pe_premium=0), dict(kind="butterfly")):
+        with pytest.raises(ValueError):
+            quick_strike(bad.pop("kind"), "PE" if "pe_premium" in bad else "CE", **bad)
+
+
+def test_quick_kind_of():
+    sell = lambda t, rule="ATM", value=0: LegSpec("SELL", t, strike_rule=rule, value=value)   # noqa: E731
+    assert quick_kind_of([sell("CE"), sell("PE")])[0] == "straddle"
+    kind, found = quick_kind_of([sell("CE", value=4), sell("PE", value=-3)])
+    assert (kind, found["ce_offset"], found["pe_offset"]) == ("strangle", 4, 3)
+    kind, found = quick_kind_of([sell("CE", "PREMIUM", 90), sell("PE", "PREMIUM", 70)])
+    assert (kind, found["ce_premium"], found["pe_premium"]) == ("premium", 90, 70)
+    assert quick_kind_of([sell("CE", value=-2), sell("PE", value=2)])[0] == "custom"     # in the money: custom
+    assert quick_kind_of([sell("CE"), LegSpec("BUY", "PE")])[0] == "custom"
+    assert quick_kind_of([sell("CE"), sell("PE"), sell("CE")])[0] == "custom"
+
+
+# Short strangle on the hand-made day: spot 26,010 -> ATM 26000; CE ATM+1 = 26100, PE ATM-1 = 25900.
+def test_short_strangle_strikes():
+    legs = [LegSpec("SELL", "CE", value=quick_strike("strangle", "CE", 1, 1)[1]),
+            LegSpec("SELL", "PE", value=quick_strike("strangle", "PE", 1, 1)[1])]
+    _, tr = run(legs, {})
+    assert list(tr.symbol.str.split().str[1]) == ["26100", "25900"]
+
+
+# Premium based: the strike nearest the premium AT THE ENTRY TIME (the price of the candle before it).
+#   26000 CE: 100, 100, 80, 70, 64        26100 CE: 50, 52, 55, 40, 35        (25900 CE stays at 100)
+#   entry 09:17 uses candle 1: 26000 = 100, 26100 = 52 -> nearest Rs 60 is 26100
+#   entry 09:20 uses candle 4: 26000 = 64,  26100 = 35 -> nearest Rs 60 is 26000
+def test_premium_strike_follows_entry_time():
+    series = {CE: [100, 100, 80, 70, 64], ("CE", 26100.0): [50, 52, 55, 40, 35]}
+    legs = [LegSpec("SELL", "CE", strike_rule="PREMIUM", value=60)]
+    _, early = run(legs, series)
+    assert (early.iloc[0].symbol.split()[1], early.iloc[0].entry_price) == ("26100", 52)
+    _, late = run(legs, series, entry_time=dt.time(9, 20), exit_time=dt.time(9, 25))
+    assert (late.iloc[0].symbol.split()[1], late.iloc[0].entry_price) == ("26000", 64)
