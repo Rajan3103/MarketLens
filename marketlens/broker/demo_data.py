@@ -122,11 +122,15 @@ class DemoDataClient:
 
     # spots / vix: fixed values (the tests use these, so no internet is needed).
     def __init__(self, spots: dict | None = None, vix: float | None = None,
-                 now: dt.datetime | None = None):
+                 now: dt.datetime | None = None, moving: bool = False):
+        """moving=True: during market hours the option chain's spot follows the DEMO minute path
+        (used by forward testing so prices change every minute)."""
         self._spots = {k.upper(): float(v) for k, v in (spots or {}).items()}
         self._vix = vix
         self._now = now
         self._offline = spots is not None
+        self.moving = moving
+        self._day_paths: dict = {}
 
     # The DEMO client always works.
     def is_ready(self) -> bool:
@@ -204,6 +208,8 @@ class DemoDataClient:
     def get_option_chain(self, underlying: str, expiry: dt.date) -> OptionChain:
         underlying = underlying.upper()
         spot, base_vol, now = self.spot(underlying), self.vol(), self.now()
+        if self.moving:
+            spot = self.minute_spot(underlying, now) or spot
         step = strike_step(underlying, spot)
         atm = round(spot / step) * step
         years = years_to_expiry(now, expiry)
@@ -265,6 +271,18 @@ class DemoDataClient:
             # Brownian bridge: random wiggles that still end exactly at the day's close
             out[idx] = prev * np.exp(walk - frac * walk[-1] + frac * math.log(close / prev))
         return out
+
+    # The DEMO price at the last finished minute of `when` (None outside market hours / weekends).
+    def minute_spot(self, symbol: str, when: dt.datetime) -> float | None:
+        when = when.astimezone(IST) if when.tzinfo else when.replace(tzinfo=IST)
+        m = (when.hour * 60 + when.minute) - (9 * 60 + 15)
+        if when.weekday() >= 5 or m < 1:
+            return None
+        key = (symbol.upper(), when.date())
+        if key not in self._day_paths:              # the whole day's path, so every minute matches the downloads
+            self._day_paths[key] = self._path(symbol, candle_times(when.date(), when.date(), 1), 1)
+        path = self._day_paths[key]
+        return float(path[min(m, len(path)) - 1])
 
     # Open/high/low around a closing-price series.
     @staticmethod

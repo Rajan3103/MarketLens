@@ -15,7 +15,8 @@ Rules
   - Positions are netted per symbol and product. Realised P&L uses the average price:
     buy 10 at 100, sell 10 at 110 -> +100 before costs.
   - Every order and position is saved in the orders / positions tables with mode='paper', and is
-    loaded again when the app restarts.
+    loaded again when the app restarts. strategy_id gives each strategy its own paper account
+    (None = your manual trades); run_id links orders to that day's forward_test_runs row.
   - Funds are simple: money used = |qty| x average price of open positions (a short option needs far
     more margin at a real broker; the paper broker does not model that).
 """
@@ -132,8 +133,9 @@ class PaperBroker(Broker):
 
     def __init__(self, prices: Callable[[str, str | None], float | None] | None = None, capital: float | None = None,
                  costs: CostSettings | None = None, save: bool = True, url: str | None = None,
-                 max_open_positions: int | None = None):
+                 max_open_positions: int | None = None, strategy_id: int | None = None, run_id: int | None = None):
         self.prices, self.costs, self.save, self.url = prices, costs or CostSettings(), save, url
+        self.strategy_id, self.run_id = strategy_id, run_id
         self.no_slip = CostSettings(**{**self.costs.__dict__, "slippage_value": 0.0})   # slippage is in the price
         self.capital = float(config.PAPER_CAPITAL if capital is None else capital)
         self.max_open = max_open_positions or config.MAX_OPEN_POSITIONS
@@ -304,6 +306,11 @@ class PaperBroker(Broker):
 
     # ---- database ----
 
+    # The rows of this paper account: mode paper and this strategy (or no strategy).
+    def _mine(self, model):
+        same = model.strategy_id.is_(None) if self.strategy_id is None else model.strategy_id == self.strategy_id
+        return (model.mode == "paper") & same
+
     # Load open positions, pending orders and the totals of closed positions (mode = paper).
     def _load(self):
         from sqlalchemy import func, select
@@ -311,7 +318,7 @@ class PaperBroker(Broker):
         from marketlens.db import get_session
         from marketlens.models import Order, Position
         with get_session(self.url) as session:
-            for row in session.scalars(select(Position).where(Position.mode == "paper", Position.is_open)):
+            for row in session.scalars(select(Position).where(self._mine(Position), Position.is_open)):
                 pos = PaperPosition(row.id, row.symbol, row.product, row.segment or segment_for(row.symbol or "", row.product),
                                     row.security_id, row.qty, float(row.avg_price), float(row.realized_pnl),
                                     float(row.costs), float(row.ltp) if row.ltp is not None else None, row.opened_at)
@@ -320,9 +327,9 @@ class PaperBroker(Broker):
                     self.last.setdefault(pos.symbol, pos.ltp)
             done = session.execute(select(func.coalesce(func.sum(Position.realized_pnl), 0),
                                           func.coalesce(func.sum(Position.costs), 0))
-                                   .where(Position.mode == "paper", Position.is_open.is_(False))).one()
+                                   .where(self._mine(Position), Position.is_open.is_(False))).one()
             self.closed_realized, self.closed_costs = float(done[0]), float(done[1])
-            for row in session.scalars(select(Order).where(Order.mode == "paper", Order.status.in_(OPEN_STATUSES))
+            for row in session.scalars(select(Order).where(self._mine(Order), Order.status.in_(OPEN_STATUSES))
                                        .order_by(Order.id)):
                 self.orders.append(PaperOrder(row.id, row.symbol, row.side, row.qty, row.order_type, row.product,
                                               row.segment or segment_for(row.symbol or "", row.product),
@@ -341,7 +348,7 @@ class PaperBroker(Broker):
         with get_session(self.url) as session:
             row = session.get(Order, o.id) if o.id else None
             if row is None:
-                row = Order(mode="paper")
+                row = Order(mode="paper", strategy_id=self.strategy_id, forward_test_run_id=self.run_id)
                 session.add(row)
             row.symbol, row.security_id, row.segment, row.tag = o.symbol, o.security_id, o.segment, o.tag
             row.side, row.qty, row.order_type, row.product = o.side, o.qty, o.order_type, o.product
@@ -362,7 +369,7 @@ class PaperBroker(Broker):
         with get_session(self.url) as session:
             row = session.get(Position, p.id) if p.id else None
             if row is None:
-                row = Position(mode="paper")
+                row = Position(mode="paper", strategy_id=self.strategy_id)
                 session.add(row)
             row.symbol, row.security_id, row.segment, row.product = p.symbol, p.security_id, p.segment, p.product
             row.qty, row.avg_price, row.ltp = p.qty, p.avg_price, p.ltp
@@ -378,7 +385,7 @@ class PaperBroker(Broker):
         from marketlens.db import get_session
         from marketlens.models import Order
         with get_session(self.url) as session:
-            rows = session.scalars(select(Order).where(Order.mode == "paper").order_by(Order.id.desc())).all()
+            rows = session.scalars(select(Order).where(self._mine(Order)).order_by(Order.id.desc())).all()
             data = [{"id": r.id, "placed_at": r.placed_at, "symbol": r.symbol, "side": r.side, "qty": r.qty,
                      "order_type": r.order_type, "product": r.product, "price": _f(r.price),
                      "trigger_price": _f(r.trigger_price), "status": r.status, "filled_qty": r.filled_qty,
@@ -393,7 +400,7 @@ class PaperBroker(Broker):
         from marketlens.db import get_session
         from marketlens.models import Position
         with get_session(self.url) as session:
-            rows = session.scalars(select(Position).where(Position.mode == "paper", Position.is_open.is_(False))
+            rows = session.scalars(select(Position).where(self._mine(Position), Position.is_open.is_(False))
                                    .order_by(Position.id.desc())).all()
             return [{"id": r.id, "symbol": r.symbol, "product": r.product, "qty": r.qty, "avg_price": _f(r.avg_price),
                      "ltp": _f(r.ltp), "realized_pnl": _f(r.realized_pnl), "unrealized_pnl": 0.0, "costs": _f(r.costs),

@@ -450,6 +450,7 @@ class _DayRun:
         self.realised, self.m2m_best, self.m2m_floor_raised = 0.0, -math.inf, False
         self.first_entry: dt.datetime | None = None
         self.spot_entry: float | None = None
+        self.now: int | None = None                 # live trading: the current minute (None = whole day)
         self.cost_moves: list[_LegState] = []
 
     # The clock time at the start of candle m.
@@ -621,11 +622,14 @@ class _DayRun:
         return False
 
     # When the strategy enters: the entry minute, or the first minute after the range breaks.
-    def plan_entry(self) -> int:
+    def plan_entry(self) -> int | None:
+        """Live trading: None while the range is still forming or has not broken yet."""
         s = self.s
         if s.entry_mode == "time":
             return minute_index(s.entry_time)
         r0, r1 = minute_index(s.range_start), minute_index(s.range_end)
+        if self.now is not None and self.now < r1:
+            return None
         if s.range_source == "leg":
             k = r1 - 1
             for leg in self.legs:
@@ -636,7 +640,7 @@ class _DayRun:
             return r1
         closes = self.d.spot_series()
         hi, lo = np.nanmax(closes[r0:r1]), np.nanmin(closes[r0:r1])
-        for m in range(r1, self.last):
+        for m in range(r1, self.last if self.now is None else min(self.last, self.now)):
             up = s.breakout_side in ("high", "either") and closes[m] > hi
             down = s.breakout_side in ("low", "either") and closes[m] < lo
             if up or down:
@@ -646,15 +650,24 @@ class _DayRun:
                 for leg in self.legs:
                     leg.entry_note = note
                 return m + 1
+        if self.now is not None and self.now <= self.last:
+            return None                                    # live: may still break later today
         raise ValueError(f"No breakout of the {s.underlying} range {hi:,.2f}-{lo:,.2f} before the exit time")
 
     # Run the day; returns (trades, MTM summary, spot at exit).
-    def run(self):
+    def run(self, now: int | None = None):
+        """now (live trading): the current minute; candles before it have finished. The day is run up
+        to that moment with exactly the same rules, and orders due now are placed, but candle `now`
+        itself is not checked yet. None = the whole day (backtest)."""
+        self.now = now
         start = self.plan_entry()
+        if start is None:                                  # live: still waiting for the breakout
+            return self.trades, None, None
         for leg in self.legs:
             if leg.status == "scheduled":
                 leg.wake = start
-        for m in range(start, self.last + 1):
+        stop = self.last if now is None else min(self.last, now)
+        for m in range(start, stop + 1):
             for leg in self.legs:
                 if leg.status == "scheduled" and m >= leg.wake:
                     note = leg.entry_note if leg.reentries == 0 else f"re-execute {leg.reentries} with a new strike"
@@ -662,6 +675,8 @@ class _DayRun:
                     self.enter(leg, leg.prices[3][m - 1], m, m, note)
                     if len(self.curve) == 0 and all(x.status != "scheduled" for x in self.legs):
                         self.curve.append((self.at(m).time(), self.m2m(m - 1)))
+            if now is not None and m == now:
+                break                                      # live: this minute's candle has not finished
             for leg in self.legs:
                 if leg.status == "open" and m >= leg.monitor_from:
                     self.check_leg(leg, m)
@@ -678,8 +693,10 @@ class _DayRun:
                 if leg.status == "open":
                     self.close(leg, leg.prices[3][self.last], self.exit_at(), "TIME")
         if self.first_entry is None:
+            if now is not None and now <= self.last:
+                return self.trades, None, None             # live: nothing entered yet
             raise ValueError("No leg broke its range before the exit time")
-        return self.trades, self.summary(), self.d.spot_at_bar(self.last)
+        return self.trades, self.summary(), self.d.spot_at_bar(min(self.last, stop))
 
     # The day's mark-to-market summary: best and worst M2M and when they happened.
     def summary(self) -> dict:
@@ -696,6 +713,14 @@ class _DayRun:
 # Run the strategy on one day: returns (trades, MTM summary, spot at exit).
 def run_day(settings: OptionsBacktestSettings, day: DayArrays) -> tuple[list[Trade], dict, float]:
     return _DayRun(settings, day).run()
+
+
+# Live trading: run today only up to minute `now` with the backtest's rules. The returned run has
+# .trades (closed so far) and .legs (status "open" = in the market now, with strike and entry).
+def run_day_until(settings: OptionsBacktestSettings, day: DayArrays, now: int) -> _DayRun:
+    run = _DayRun(settings, day)
+    run.run(now=now)
+    return run
 
 
 # ---------------------------------------------------------------- the whole period

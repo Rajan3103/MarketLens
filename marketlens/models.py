@@ -273,18 +273,23 @@ class BacktestTrade(Base):
 
 
 class ForwardTestRun(Base):
-    """A strategy running on the live market with virtual money (module 6)."""
+    """One day of a strategy running on the live market with virtual money (module 6)."""
     __tablename__ = "forward_test_runs"
     id: Mapped[int] = mapped_column(primary_key=True)
     strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"))
-    status: Mapped[str] = mapped_column(server_default="running")
+    trade_date: Mapped[dt.date | None]                    # the market day this row covers
+    status: Mapped[str] = mapped_column(server_default="running")   # stopping = the page asked it to stop
+    state: Mapped[str | None]                 # waiting, watching, in_trade, done, closed (shown on the page)
+    message: Mapped[str | None] = mapped_column(Text)
+    heartbeat_at: Mapped[dt.datetime | None]  # last time the background process checked in
     capital: Mapped[Decimal] = mapped_column(Money)
-    pnl: Mapped[Decimal | None] = mapped_column(Money)
-    params: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)
+    pnl: Mapped[Decimal | None] = mapped_column(Money)    # today's P&L after costs
+    params: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)   # live view: legs, trades, events done
     notes: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[dt.datetime] = created_now()
     stopped_at: Mapped[dt.datetime | None]
-    __table_args__ = (one_of("status", ["running", "stopped"]),)
+    __table_args__ = (one_of("status", ["running", "stopping", "stopped", "error"]),
+                      UniqueConstraint("strategy_id", "trade_date"))
 
 
 class SimulatorSession(Base):
