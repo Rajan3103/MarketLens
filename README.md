@@ -32,7 +32,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 5 | Option Simulator | Replay a stored day minute by minute and trade it with virtual money | ✅ |
 | | 6 | Forward Test / Paper Trading | Run a saved strategy every minute on live Dhan (or DEMO) prices through the paper broker, as a background process; history vs backtest | ✅ (paper only) |
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Indicator rules without code (AND / OR); backtest with entry / exit markers; scanner; Pine Script v6 export with webhook alerts; webhook receiver (FastAPI) that saves alerts, sends Telegram messages and places paper orders for "auto" strategies | ✅ |
-| | 8 | Momentum Engine Backtest | | 📋 |
+| | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
 | | 9 | ETF Momentum Portfolio | | 📋 |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategies are already saved to the library from modules 2, 4 and 6 | 🛠️ |
 | | 11 | Live Algo Trading & Bot Monitor | | 📋 |
@@ -321,7 +321,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **636 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **657 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -356,7 +356,8 @@ MarketLens/
 │   │                       # pine.py (Pine Script v6 export + validator)
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
 │   ├── alerts/             # telegram.py (send a Telegram message)
-│   └── momentum/, alerts/, scheduler/, webhook/   # for the upcoming modules
+│   ├── momentum/           # ranking.py (momentum scores, filters, rank on any date)
+│   └── scheduler/          # for the upcoming modules
 ├── migrations/             # Alembic migrations 0001 .. 0008
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
@@ -379,8 +380,12 @@ default, DEMO data without keys, tests for every calculation).
 - A public HTTPS address for the webhook receiver (part of the AWS step).
 
 ### 8. Momentum Engine Backtest
-- Rank Nifty 50 / Nifty 200 stocks by momentum (returns over several look-backs, volatility
-  adjusted), hold the top N, rebalance monthly or weekly.
+- ✅ Done: the ranking engine (`marketlens/momentum/ranking.py`). Scores over 63 / 126 / 252
+  days (skipping the last 21) by plain return, volatility-adjusted return or Sharpe; filters for
+  price above its 200-day average, minimum traded value (Rs crore), biggest one-day move; buys
+  only when Nifty 50 is above its 200-day average, else holds LIQUIDBEES or cash. Uses only the
+  prices up to the chosen date (tested). Needs Nifty 50 prices: sync `^NSEI` once.
+- Next: hold the top N, rebalance monthly or weekly, and the page.
 - CAGR, max drawdown, Sharpe, Sortino against Nifty 50, after all costs.
 
 ### 9. ETF Momentum Portfolio
