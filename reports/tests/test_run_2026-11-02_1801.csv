@@ -1,0 +1,2 @@
+﻿date,python,os,git_commit,total,passed,failed,errors,skipped,seconds,pytest_exit_code
+2026-11-02 18:01,3.13.7,Windows 11,82b7dc2,795,767,0,0,28,86.58,0

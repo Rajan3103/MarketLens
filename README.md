@@ -518,6 +518,17 @@ limit, where implied volatility cannot be measured). Add `-v` to see each test b
 - Page tests run each Streamlit page headless (no browser) with `streamlit.testing`.
 - Test files live in `tests/` and their names start with `test_`.
 
+**Save the results as CSV** (for reports or a research paper):
+
+```bash
+python scripts/test_report.py
+```
+
+It runs every test and writes into `reports/tests/` (date and time in each name, so earlier runs
+are kept): `test_results_<when>.csv` (one row per test: file, test, what it checks, status,
+seconds, message), `test_summary_<when>.csv` (totals per test file and an ALL row) and
+`test_run_<when>.csv` (date, Python, operating system, git commit, totals).
+
 ---
 
 ## Folder layout
