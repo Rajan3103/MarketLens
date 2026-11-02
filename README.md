@@ -5,8 +5,11 @@ similar in spirit to AlgoTest and StockMock.
 
 MarketLens downloads index, stock, ETF and options data into PostgreSQL, shows live market
 dashboards, builds and backtests option strategies minute by minute, replays past days for
-practice, and forward-tests strategies on the live market with virtual money. Later it will
-place real orders through the **Dhan** API, send Telegram alerts and run on an AWS server.
+practice, and forward-tests strategies on the live market with virtual money. It also builds
+indicator strategies (with TradingView Pine Script export and webhook alerts), backtests an ETF
+momentum portfolio after costs and capital gains tax, and keeps every strategy, trade and journal
+note in one Strategy Library. Later it will place real orders through the **Dhan** API, run a
+Telegram bot and run on an AWS server.
 
 > Everything in this app is historical analysis for learning.
 > It is **not** investment advice or a live trading recommendation.
@@ -190,7 +193,8 @@ and is never uploaded. Restart the app after changing it.
 | `TRADING_MODE` | `paper` (default) or `live` | Paper |
 | `PAPER_CAPITAL` | Virtual money for the paper broker (default 500000) | Rs 5,00,000 |
 | `MAX_DAILY_LOSS_RS`, `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND` | Risk limits | Safe defaults |
-| `TELEGRAM_*`, `WEBHOOK_SECRET` | Upcoming modules 7 and 12 | Not used yet |
+| `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | A Telegram message for every webhook alert (module 7); the bot later (module 12) | No messages are sent |
 
 **Settings & Status** shows which keys are still missing.
 
@@ -249,6 +253,13 @@ alembic upgrade head
 ```bash
 python scripts/sync_prices.py --universe etfs --years 10
 python scripts/sync_prices.py --universe nifty200 --years 10
+```
+
+The momentum ranking (module 8) also needs the **Nifty 50 index** for its "only buy when Nifty 50 is
+above its 200-day average" filter. Download it once (later runs of the line add the missing days):
+
+```bash
+python -c "import datetime as d; from marketlens.ingest.prices import sync_prices; print(sync_prices(['^NSEI'], d.date(2016, 1, 1)))"
 ```
 
 The first run downloads everything (about 1.5 minutes for Nifty 200 × 10 years); later runs
@@ -341,6 +352,22 @@ above.
 
 ---
 
+## Where the data comes from
+
+| Data | Source | Key needed | Used by |
+| --- | --- | --- | --- |
+| Daily prices of Nifty 200 stocks, ETFs and indices | Yahoo Finance (yfinance), stored in `daily_prices` | No | Signals backtest and scanner (7), momentum ranking (8), ETF portfolio (9), Nifty 50 comparison (10) |
+| 1-minute index candles and expired option minutes | Dhan, stored in `price_bars` / `intraday_option_prices` | Dhan | Options backtester (4), simulator (5) |
+| Live quotes and option chains | Dhan (not stored) | Dhan | Pages 1, 2 and 6 |
+| Security IDs | Dhan's public scrip master (`data/dhan/`) | No | Every Dhan request |
+| Stock / ETF lists | `data/universe/*.csv` | No | Downloads, scanner, momentum, ETF page |
+
+Without Dhan keys, the minute data and live quotes are **DEMO** (made up) and every page that shows
+them says so. Page **3 → What is stored** lists what is in your database, and
+**Settings & Status** shows which keys are missing.
+
+---
+
 ## A typical workflow
 
 1. **Download** option minutes for a period (page 3 or `download_options.py`).
@@ -349,6 +376,14 @@ above.
 4. **Replay** an interesting day in the Simulator (page 5) and practise trading it.
 5. **Save** it to the Strategy Library and **forward-test** it on page 6 with virtual money.
 6. Compare forward-test days with the backtest of the same days (page 6, History tab).
+7. **Journal** your trades on page 10 (notes, tags, rating, screenshot) and read the stats by tag,
+   weekday and strategy to see what works for you.
+8. Check your **combined performance** against Nifty 50 on page 10, and reopen, copy or share any
+   strategy from the Strategy Library (JSON export / import).
+
+For ETF investing: sync the ETF prices (step 6), backtest on page **9**, check how sensitive the
+result is in the **Parameter sweep** tab, compare any claimed return in **Check a claim**, and look
+at the **Current signal** after each month end.
 
 ---
 
@@ -386,7 +421,8 @@ MarketLens/
 │   ├── utils.py, logger.py, ui.py   # @retry / RateLimiter, logging, shared page pieces
 │   ├── broker/             # data clients (Dhan or DEMO), instruments, base.py (Broker interface),
 │   │                       # paper.py (PaperBroker: virtual orders and positions)
-│   ├── ingest/             # downloads into PostgreSQL: prices, candles, option data
+│   ├── ingest/             # downloads into PostgreSQL: prices, candles, option data;
+│   │                       # clean.py (repairs 10x / 100x price errors in Yahoo data)
 │   ├── options/            # pricing (Black-Scholes, IV, Greeks), expiries, chain, strategies, strike_select
 │   ├── backtest/           # metrics, engine (Trade, BacktestResult), store, charts, report, ui,
 │   │                       # options_bt.py (the options backtester and its rules)
@@ -397,12 +433,13 @@ MarketLens/
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
 │   ├── alerts/             # telegram.py (send a Telegram message)
 │   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
+│   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
 │   └── scheduler/          # for the upcoming modules
 ├── migrations/             # Alembic migrations 0001 .. 0009
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
 ├── data/universe/          # nifty50.csv, nifty200.csv, etfs.csv
-├── data/                   # local downloads and forward-test minutes (not uploaded)
+├── data/                   # local downloads, forward-test minutes, journal screenshots (not uploaded)
 ├── logs/                   # log files (not uploaded)
 ├── requirements.txt        # packages, each with a comment
 └── .env.example            # template for your private keys
@@ -464,6 +501,12 @@ default, DEMO data without keys, tests for every calculation).
 - One lot size is used for a whole backtest (today's lot size unless you set one).
 - The ETF backtest applies today's capital gains tax rules to every year (the rules changed in
   2018, 2023 and 2024); surcharge and the 8-year limit on carried-forward losses are not modelled.
+- LIQUIDBEES earns a fixed yearly yield you set (5% by default) in the ETF backtest, because Yahoo's
+  prices miss part of its daily interest; the real yield moved between about 3% and 6% a year.
+- The DP charge (Rs 12.5 + GST per scrip sold from demat) is Dhan's published rate when this was
+  written; check it on Dhan's pricing page. It also applies to paper delivery sells.
+- Holdings snapshots (page 10) are saved when the page is opened, so a day without a visit has no
+  point on the value chart. Day P&L is left blank when yesterday's close is not known.
 
 ---
 
