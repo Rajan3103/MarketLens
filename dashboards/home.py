@@ -19,7 +19,7 @@ Welcome! Pick a dashboard from the menu on the left.
 | | 6 | Forward Test / Paper Trading | Run a saved options (backtester rules) or indicator strategy every minute on live Dhan / DEMO prices through the paper broker, as a background process; status, open legs, trades with exit reasons; history vs backtest | ✅ (paper only) |
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Condition builder (AND/OR) on SMA, EMA, RSI, MACD, Bollinger, Supertrend, VWAP, ATR; backtest with chart markers; scanner on Nifty 50/200, ETFs or a watchlist; Pine Script v6 export with webhook alerts; FastAPI webhook receiver (saves alerts, Telegram, paper orders for auto strategies) | ✅ |
 | | 8 | Momentum Engine Backtest | Momentum stock portfolio against Nifty 50 | 📋 |
-| | 9 | ETF Momentum Portfolio | Rotate among NSE ETFs by momentum | 📋 |
+| | 9 | ETF Momentum Portfolio | Top-K ETF rotation after costs and tax vs Nifty 50; check a claim; parameter sweep | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Saved strategies, results and your P&L analytics | 📋 |
 | | 11 | Live Algo Trading & Bot Monitor | Dhan orders (paper by default) and bot status | 📋 |
 | | 12 | Telegram Bot Control Panel | Alerts and bot commands on Telegram | 📋 |

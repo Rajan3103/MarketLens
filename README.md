@@ -33,7 +33,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 6 | Forward Test / Paper Trading | Run a saved strategy every minute on live Dhan (or DEMO) prices through the paper broker, as a background process; history vs backtest | ✅ (paper only) |
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Indicator rules without code (AND / OR); backtest with entry / exit markers; scanner; Pine Script v6 export with webhook alerts; webhook receiver (FastAPI) that saves alerts, sends Telegram messages and places paper orders for "auto" strategies | ✅ |
 | | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
-| | 9 | ETF Momentum Portfolio | | 📋 |
+| | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategies are already saved to the library from modules 2, 4 and 6 | 🛠️ |
 | | 11 | Live Algo Trading & Bot Monitor | | 📋 |
 | | 12 | Telegram Bot Control Panel | | 📋 |
@@ -90,6 +90,29 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 - **Webhook receiver** (`python -m marketlens.webhook.server`): checks the secret (401 if wrong),
   ignores the same alert repeated within 10 s, saves every event and a signal, sends a Telegram
   message, and places a paper order for "auto" strategies.
+
+**9. ETF Momentum Portfolio**
+- Tick the ETFs (all from `data/universe/etfs.csv`), top K (1–5), lookbacks (1 / 3 / 6 / 12 months)
+  with weights, score (return, return / volatility, Sharpe-style), monthly or weekly rebalance,
+  absolute momentum filter (an ETF must itself be rising, else its slot goes to LIQUIDBEES or cash),
+  start date and capital.
+- **No look-ahead:** ranked at the close of the last trading day of the month / week, traded at the
+  next day's close (Yahoo's ETF open prices are unreliable, so they are not used).
+- **Costs at every rebalance:** brokerage, STT (0.001% on equity-ETF sells; none on gold, silver,
+  international or liquid ETFs), exchange, SEBI, stamp duty, GST, DP charge and slippage, with
+  whole units only. **Capital gains tax** with today's Indian rules (equity 20% / 12.5% above
+  Rs 1.25 lakh; gold / silver / international at your slab or 12.5% after 12 months; liquid at your
+  slab), losses set off and carried forward; all rates are settings.
+- **Check a claim:** type e.g. "670% from Nov-2016": the same settings run without costs, with costs
+  and with tax, next to the claim and Nifty 50, with how many points costs and tax took.
+- Results vs Nifty 50 (NIFTYBEES with dividends): metrics table, equity curve, drawdown, yearly
+  returns, holdings, every rebalance, tax by financial year, sold lots, Excel report.
+- **Parameter sweep** (K = 1..5 × six lookback sets) to see how fragile the result is;
+  **current signal** from the last stored close; **Save to Strategy Library**.
+- **Data repairs:** Yahoo stored a few days of NIFTYBEES, BANKBEES, PSUBNKBEES, GOLDBEES and MON100
+  at 1/10 or 1/100 of the price around unit splits; these are repaired using only earlier prices.
+  LIQUIDBEES' interest is paid as extra units that Yahoo's prices only partly show, so by default
+  it earns a fixed yearly yield you set (5%).
 
 ---
 
@@ -321,7 +344,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **657 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **688 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -340,7 +363,7 @@ MarketLens/
 ├── marketlens/             # shared code
 │   ├── config.py           # reads keys and settings from .env
 │   ├── db.py, models.py    # PostgreSQL connection and all tables
-│   ├── costs.py            # brokerage, STT, exchange, SEBI, stamp duty, GST, slippage
+│   ├── costs.py            # brokerage, STT, exchange, SEBI, stamp duty, GST, DP charge, slippage (shares, F&O, ETFs)
 │   ├── export.py           # CSV / Excel downloads
 │   ├── overview.py         # module 1: cards, movers, breadth, sector heatmap
 │   ├── utils.py, logger.py, ui.py   # @retry / RateLimiter, logging, shared page pieces
@@ -356,7 +379,7 @@ MarketLens/
 │   │                       # pine.py (Pine Script v6 export + validator)
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
 │   ├── alerts/             # telegram.py (send a Telegram message)
-│   ├── momentum/           # ranking.py (momentum scores, filters, rank on any date)
+│   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
 │   └── scheduler/          # for the upcoming modules
 ├── migrations/             # Alembic migrations 0001 .. 0008
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
@@ -388,9 +411,8 @@ default, DEMO data without keys, tests for every calculation).
 - Next: hold the top N, rebalance monthly or weekly, and the page.
 - CAGR, max drawdown, Sharpe, Sortino against Nifty 50, after all costs.
 
-### 9. ETF Momentum Portfolio
-- Rotate among NSE ETFs (equity, gold, international, debt) by momentum with a cash filter.
-- This month's suggested holdings and the rebalancing orders (paper first).
+### 9. ETF Momentum Portfolio (remaining)
+- Turning the current signal into paper rebalancing orders (and a monthly reminder).
 
 ### 10. Personal Analytics & Strategy Library
 - Every saved strategy with its backtests, forward tests and notes in one place.
@@ -424,6 +446,8 @@ default, DEMO data without keys, tests for every calculation).
 - The paper broker's "money used" is simple (quantity × average price); real option-selling
   margin is much higher.
 - One lot size is used for a whole backtest (today's lot size unless you set one).
+- The ETF backtest applies today's capital gains tax rules to every year (the rules changed in
+  2018, 2023 and 2024); surcharge and the 8-year limit on carried-forward losses are not modelled.
 
 ---
 

@@ -21,19 +21,24 @@ All rates below are in PERCENT of turnover (price x qty) unless the name says _R
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-SEGMENTS = ("equity_delivery", "equity_intraday", "options", "futures")
+SEGMENTS = ("equity_delivery", "equity_intraday", "options", "futures", "etf_equity", "etf_other")
+# etf_equity: ETFs holding Indian shares (NIFTYBEES, BANKBEES ...), bought for delivery
+# etf_other:  gold, silver, international and liquid ETFs (GOLDBEES, MON100, LIQUIDBEES ...)
 SIDES = ("BUY", "SELL")
 
 # ---- Brokerage (Dhan defaults; change them on each page through CostSettings) ----
 BROKERAGE_PER_ORDER_RS = 20.0      # F&O and intraday: Rs 20 per executed order
 BROKERAGE_CAP_PCT = 0.03           # intraday & futures: Rs 20 or 0.03%, whichever is LOWER
 DELIVERY_BROKERAGE_RS = 0.0        # equity delivery: Rs 0 at Dhan
+DP_CHARGE_RS = 12.5                # depository charge for each scrip SOLD from your demat (delivery and ETFs), + GST
 
 # ---- STT: Securities Transaction Tax (government) ----
 STT_DELIVERY_PCT = 0.1             # delivery: 0.1% on BUY and on SELL
 STT_INTRADAY_SELL_PCT = 0.025      # intraday: 0.025% on SELL only
 STT_FUTURES_SELL_PCT = 0.05        # futures: 0.05% on SELL only (was 0.02% before 1-Apr-2026)
 STT_OPTIONS_SELL_PCT = 0.15        # options: 0.15% of PREMIUM on SELL only (was 0.10% before 1-Apr-2026)
+STT_ETF_EQUITY_SELL_PCT = 0.001    # equity ETF units: 0.001% on SELL only (like equity mutual fund units)
+                                   # gold, silver, international and liquid ETFs: no STT
 # (Options held to expiry and exercised pay 0.15% of intrinsic value instead; not included here.)
 
 # ---- NSE exchange transaction charges (includes the small IPFT fee) ----
@@ -50,7 +55,7 @@ STAMP_INTRADAY_BUY_PCT = 0.003
 STAMP_FUTURES_BUY_PCT = 0.002
 STAMP_OPTIONS_BUY_PCT = 0.003
 
-# ---- GST: 18% on (brokerage + exchange charges + SEBI fee) ----
+# ---- GST: 18% on (brokerage + exchange charges + SEBI fee + DP charge) ----
 GST_PCT = 18.0
 
 # The same rates arranged by segment, so the code below stays short
@@ -59,19 +64,26 @@ STT_PCT = {  # (on BUY, on SELL)
     "equity_intraday": (0.0, STT_INTRADAY_SELL_PCT),
     "futures": (0.0, STT_FUTURES_SELL_PCT),
     "options": (0.0, STT_OPTIONS_SELL_PCT),
+    "etf_equity": (0.0, STT_ETF_EQUITY_SELL_PCT),
+    "etf_other": (0.0, 0.0),
 }
 EXCHANGE_PCT = {
     "equity_delivery": EXCHANGE_EQUITY_PCT,
     "equity_intraday": EXCHANGE_EQUITY_PCT,
     "futures": EXCHANGE_FUTURES_PCT,
     "options": EXCHANGE_OPTIONS_PCT,
+    "etf_equity": EXCHANGE_EQUITY_PCT,
+    "etf_other": EXCHANGE_EQUITY_PCT,
 }
 STAMP_BUY_PCT = {
     "equity_delivery": STAMP_DELIVERY_BUY_PCT,
     "equity_intraday": STAMP_INTRADAY_BUY_PCT,
     "futures": STAMP_FUTURES_BUY_PCT,
     "options": STAMP_OPTIONS_BUY_PCT,
+    "etf_equity": STAMP_DELIVERY_BUY_PCT,
+    "etf_other": STAMP_DELIVERY_BUY_PCT,
 }
+DELIVERY_SEGMENTS = ("equity_delivery", "etf_equity", "etf_other")   # held in demat: Rs 0 brokerage at Dhan, DP charge on SELL
 
 
 @dataclass
@@ -88,13 +100,14 @@ class CostSettings:
     slippage_type: str = "pct"
     slippage_value: float = 0.0
     include_taxes: bool = True
+    dp_charge: float = DP_CHARGE_RS    # per SELL order of delivery shares / ETFs (one scrip, one day)
 
     # Check the numbers as soon as settings are made.
     def __post_init__(self):
         """Refuse negative numbers and unknown slippage types."""
         if self.slippage_type not in ("pct", "points"):
             raise ValueError("slippage_type must be 'pct' or 'points'")
-        numbers = [self.brokerage_per_order, self.delivery_brokerage, self.slippage_value]
+        numbers = [self.brokerage_per_order, self.delivery_brokerage, self.slippage_value, self.dp_charge]
         if self.brokerage_cap_pct is not None:
             numbers.append(self.brokerage_cap_pct)
         if any(n < 0 for n in numbers):
@@ -112,13 +125,14 @@ class TradeCosts:
     stamp: float
     gst: float
     slippage: float
+    dp: float = 0.0           # depository charge (delivery SELL only)
 
     # Brokerage plus all taxes and fees (without slippage).
     @property
     def charges(self) -> float:
         """What would appear on the broker's contract note."""
         return to_paise(self.brokerage + self.stt + self.exchange + self.sebi
-                        + self.stamp + self.gst)
+                        + self.stamp + self.gst + self.dp)
 
     # Everything this order costs you, including slippage.
     @property
@@ -154,9 +168,9 @@ def apply_slippage(price: float, side: str, settings: CostSettings | None = None
 
 # Work out brokerage for one order.
 def brokerage(segment: str, turnover: float, settings: CostSettings) -> float:
-    """Delivery: delivery_brokerage. Options: flat per order.
+    """Delivery and ETFs: delivery_brokerage. Options: flat per order.
     Intraday and futures: flat per order or cap %, whichever is lower."""
-    if segment == "equity_delivery":
+    if segment in DELIVERY_SEGMENTS:
         return to_paise(settings.delivery_brokerage)
     if segment == "options" or settings.brokerage_cap_pct is None:
         return to_paise(settings.brokerage_per_order)
@@ -166,7 +180,7 @@ def brokerage(segment: str, turnover: float, settings: CostSettings) -> float:
 # All costs of one BUY or SELL order.
 def trade_costs(segment: str, side: str, price: float, qty: int,
                 settings: CostSettings | None = None) -> TradeCosts:
-    """segment: equity_delivery, equity_intraday, options or futures
+    """segment: equity_delivery, equity_intraday, options, futures, etf_equity or etf_other
     side:    BUY or SELL
     price:   price per unit (premium for options); qty: total units
     Taxes are worked out on price x qty (the slippage is shown separately).
@@ -183,17 +197,18 @@ def trade_costs(segment: str, side: str, price: float, qty: int,
     turnover = price * qty
     brok = brokerage(segment, turnover, settings)
     slip = slippage_cost(price, qty, settings)
+    dp = to_paise(settings.dp_charge) if segment in DELIVERY_SEGMENTS and side == "SELL" else 0.0
     if not settings.include_taxes:
-        return TradeCosts(to_paise(turnover), brok, 0.0, 0.0, 0.0, 0.0, 0.0, slip)
+        return TradeCosts(to_paise(turnover), brok, 0.0, 0.0, 0.0, 0.0, 0.0, slip, dp)
 
     buy_rate, sell_rate = STT_PCT[segment]
     stt = turnover * (buy_rate if side == "BUY" else sell_rate) / 100
     exchange = turnover * EXCHANGE_PCT[segment] / 100
     sebi = turnover * SEBI_FEE_PCT / 100
     stamp = turnover * STAMP_BUY_PCT[segment] / 100 if side == "BUY" else 0.0
-    gst = (brok + exchange + sebi) * GST_PCT / 100
+    gst = (brok + exchange + sebi + dp) * GST_PCT / 100
     return TradeCosts(to_paise(turnover), brok, to_paise(stt), to_paise(exchange),
-                      to_paise(sebi), to_paise(stamp), to_paise(gst), slip)
+                      to_paise(sebi), to_paise(stamp), to_paise(gst), slip, dp)
 
 
 # Costs of a complete trade: open it and close it again.
