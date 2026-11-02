@@ -18,6 +18,7 @@ data/downloads/
 # Dhan's instrument list (re-downloaded once a day)
 data/dhan/
 data/forward/
+data/journal/
 
 # pytest leftovers
 .pytest_cache/

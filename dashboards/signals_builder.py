@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from marketlens import config
+from marketlens.backtest import store
 from marketlens.backtest.ui import show_backtest
 from marketlens.signals import backtest as sb
 from marketlens.signals import pine
@@ -115,6 +116,14 @@ st.title("📐 Signals & Indicator Strategy Builder")
 st.caption("Rules from indicators, without code: backtest them, scan for them, export them to TradingView.")
 if "sb_form" not in st.session_state:
     load_into_page()
+# A strategy opened from the Strategy Library (module 10)
+if (st.session_state.get("handoff") or {}).get("to") == "signals":
+    opened = st.session_state.pop("handoff")
+    try:
+        load_into_page(sr.SignalStrategy.from_params(opened["params"]))
+        st.success(f"Opened **{opened['name']}** from the Strategy Library.")
+    except (ValueError, TypeError, KeyError) as err:
+        st.error(f"Could not open '{opened['name']}': {err}")
 form, v = st.session_state["sb_form"], st.session_state["sb_ver"]
 
 build_tab, scan_tab, pine_tab, hook_tab = st.tabs(["🧪 Build & backtest", "🔎 Scanner", "🌲 Pine Script export",
@@ -189,6 +198,8 @@ with build_tab:
     if s2.button("💾 Save to Strategy Library", key="sb_save", disabled=strategy is None, width="stretch"):
         try:
             sid = sr.save_signal_strategy(save_name, strategy, auto=auto)
+            if ran and ran[0] == strategy:              # the backtest above used exactly these rules
+                store.save_run(sid, {}, ran[2])         # shown as its last backtest in module 10
             st.success(f"Saved '{save_name}' (id {sid}){' with auto paper orders' if auto else ''}. It appears in "
                        "the Scanner tab and module 10.")
         except Exception as err:

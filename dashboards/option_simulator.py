@@ -155,10 +155,13 @@ if msg:
 
 # A day sent here from the Options Backtester (module 4)
 handoff = st.session_state.get("sim_handoff")
-if handoff:
+if handoff and handoff.get("day"):
     with st.expander(f"From the Options Backtester: {handoff['day']:%a %d-%b-%Y} · {handoff['name']}", expanded=False):
         st.caption("The backtest's trades on that day (compare them with your own):")
         st.dataframe(handoff["trades"], hide_index=True, width="stretch")
+elif handoff:
+    st.info(f"From the Strategy Library: **{handoff['name']}** ({handoff['underlying']}). Pick a day below and "
+            "practise its legs by hand.")
 
 sim: rp.SimSession | None = st.session_state.get("sim")
 

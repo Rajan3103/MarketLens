@@ -43,6 +43,8 @@ def fake_db(monkeypatch):
     data = FiveDays()
     monkeypatch.setattr(ob, "StoredOptionData", lambda *a, **k: data)
     monkeypatch.setattr("marketlens.backtest.store.save_run", lambda *a, **k: 7)
+    monkeypatch.setattr("marketlens.library.link_run", lambda run_id, sid, url=None: data.linked.append((run_id, sid)))
+    data.linked = []
     st.cache_data.clear()
     return data
 
@@ -142,6 +144,7 @@ def test_save_to_library(fake_db, monkeypatch):
     at.text_input(key="bt_save_name").set_value("Straddle 920").run()
     at.button(key="bt_save").click().run()
     assert saved["name"] == "Straddle 920" and len(saved["s"].legs) == 2
+    assert fake_db.linked == [(7, 3)]                          # the run is linked to the saved strategy
     assert any("Saved 'Straddle 920'" in s.value for s in at.success)
 
 
@@ -197,3 +200,14 @@ def test_template_sets_type(fake_db):
     v = at.session_state["bt_ver"]
     assert at.radio(key=f"quick_kind_{v}").value == "premium"
     assert at.number_input(key=f"q_ce_premium_{v}").value == 50.0 and at.number_input(key=f"q_pe_premium_{v}").value == 50.0
+
+
+# A strategy opened from the Strategy Library (module 10) fills the form.
+def test_open_saved_strategy(fake_db):
+    settings = ob.template_settings("iron_condor", "NIFTY", dt.date(2025, 1, 1), dt.date(2025, 1, 7))
+    at = AppTest.from_file(PAGE, default_timeout=120)
+    at.session_state["handoff"] = {"to": "backtest_saved", "strategy_id": 4, "name": "My condor",
+                                   "params": settings.to_params()}
+    at.run()
+    assert not at.exception and leg_count(at) == 4 and "handoff" not in at.session_state
+    assert any("My condor" in s.value for s in at.success)

@@ -15,6 +15,7 @@ import streamlit as st
 
 from marketlens.backtest import options_bt as ob
 from marketlens.backtest.ui import show_backtest
+from marketlens.library import link_run
 from marketlens.ui import cost_settings_inputs, historical_note, key_notice
 
 UNDERLYINGS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]
@@ -137,6 +138,15 @@ if "bt_form" not in st.session_state:
     load_into_form(ob.template_settings("920_straddle", "NIFTY", start, end))
 if st.session_state.pop("bt_error", None):
     st.error("Could not load that template.")
+# A strategy opened from the Strategy Library (module 10)
+if (st.session_state.get("handoff") or {}).get("to") == "backtest_saved":
+    opened = st.session_state.pop("handoff")
+    try:
+        load_into_form(ob.settings_from_params(opened["params"]))
+        st.session_state.pop("bt_result", None)
+        st.success(f"Opened **{opened['name']}** from the Strategy Library. Press Run to backtest it.")
+    except (ValueError, TypeError, KeyError) as err:
+        st.error(f"Could not open '{opened['name']}': {err}")
 form, v = st.session_state["bt_form"], st.session_state["bt_ver"]
 
 # ---- templates and the Strategy builder hand-off ----
@@ -372,6 +382,7 @@ with u1.container(border=True):
     if st.button("💾 Save to Strategy Library", key="bt_save"):
         try:
             sid = ob.save_backtest_strategy(name, ran)
+            link_run(result.extras.get("run_id"), sid)          # the library shows this run as its last backtest
             st.success(f"Saved '{name}' (id {sid}). It will appear in module 10, Strategy Library.")
         except Exception as err:
             st.error(f"Could not save: {err}")

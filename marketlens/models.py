@@ -345,17 +345,24 @@ class PortfolioHolding(Base):
 
 
 class HoldingsSnapshot(Base):
-    """Holdings saved at each rebalance date, to draw the portfolio's history."""
+    """Holdings saved once a day (whole account, module 10) or at each rebalance (one strategy),
+    to draw the portfolio's value over time."""
     __tablename__ = "holdings_snapshots"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"))
+    mode: Mapped[str] = mapped_column(server_default="paper")        # paper or live (Dhan account)
+    strategy_id: Mapped[int | None] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"))
     snapshot_date: Mapped[dt.date]
-    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"))
+    symbol: Mapped[str | None]
+    sector: Mapped[str | None]
     qty: Mapped[Decimal]
     price: Mapped[Decimal]
+    invested: Mapped[Decimal | None] = mapped_column(Money)
     value: Mapped[Decimal] = mapped_column(Money)
+    day_pnl: Mapped[Decimal | None] = mapped_column(Money)
     weight: Mapped[Decimal | None] = mapped_column(Pct)
-    __table_args__ = (UniqueConstraint("strategy_id", "snapshot_date", "instrument_id"),)
+    __table_args__ = (Index("ix_holdings_snapshots_mode_date", "mode", "snapshot_date"),
+                      one_of("mode", ["paper", "live"]))
 
 
 # =====================================================================
@@ -491,14 +498,18 @@ class TradeJournal(Base):
     trade_date: Mapped[dt.date] = mapped_column(index=True)
     strategy_id: Mapped[int | None] = mapped_column(ForeignKey("strategies.id", ondelete="SET NULL"))
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"))
+    trade_key: Mapped[str | None] = mapped_column(unique=True)   # the trade it belongs to, e.g. "order:12", "sim:40"
+    source: Mapped[str | None]                # paper, forward, live or simulator
     title: Mapped[str]
     notes: Mapped[str | None] = mapped_column(Text)
-    tags: Mapped[list] = mapped_column(server_default=EMPTY_LIST)
+    tags: Mapped[list] = mapped_column(server_default=EMPTY_LIST)   # e.g. ["setup:Breakout", "emotion:Fear"]
+    rating: Mapped[int | None]                # 1 (poor) to 5 (excellent)
     screenshot_path: Mapped[str | None]       # path to an image file, not the image itself
     mistakes: Mapped[str | None] = mapped_column(Text)
     pnl: Mapped[Decimal | None] = mapped_column(Money)
     created_at: Mapped[dt.datetime] = created_now()
     updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    __table_args__ = (CheckConstraint("rating BETWEEN 1 AND 5", name="rating_1_to_5"),)
 
 
 class WebhookEvent(Base):

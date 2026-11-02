@@ -10,9 +10,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from marketlens.backtest import charts
+from marketlens.backtest import charts, store
 from marketlens.backtest.report import export_excel, file_stem
-from marketlens.costs import DP_CHARGE_RS, CostSettings
+from marketlens.costs import CostSettings
 from marketlens.momentum import etf_bt as eb
 from marketlens.momentum.ranking import METHODS
 from marketlens.ui import historical_note
@@ -69,13 +69,38 @@ def inside(day: dt.date) -> dt.date:
     return min(max(day, first_day), data.last_day)
 
 # ---------------------------------------------------------------- inputs
+
+# Put settings into the form; a new version number gives the input boxes new keys, so they show them.
+def load_form(settings: eb.EtfBacktestSettings):
+    st.session_state["etf_form"] = settings
+    st.session_state["etf_ver"] = st.session_state.get("etf_ver", 0) + 1
+    for name in ("etf_result", "etf_settings", "etf_claim_out", "etf_sweep"):
+        st.session_state.pop(name, None)
+
+
+if "etf_form" not in st.session_state:
+    load_form(eb.EtfBacktestSettings(symbols=list(data.closes.columns), start=inside(dt.date(2018, 1, 1)),
+                                     end=data.last_day))
+# A strategy opened from the Strategy Library (module 10)
+if (st.session_state.get("handoff") or {}).get("to") == "etf":
+    opened = st.session_state.pop("handoff")
+    try:
+        saved = eb.EtfBacktestSettings.from_params(opened["params"])
+        saved.start = inside(saved.start)
+        saved.end = inside(saved.end) if saved.end else data.last_day
+        load_form(saved)
+        st.success(f"Opened **{opened['name']}** from the Strategy Library. Press Run to backtest it.")
+    except (ValueError, TypeError, KeyError) as err:
+        st.error(f"Could not open '{opened['name']}': {err}")
+form, v = st.session_state["etf_form"], st.session_state["etf_ver"]
+
 st.subheader("1. ETFs")
 etfs = universe[universe["symbol"].isin(data.closes.columns)].copy()
-etfs.insert(0, "Use", True)
+etfs.insert(0, "Use", etfs["symbol"].isin(form.symbols) | (etfs["symbol"] == eb.LIQUID))
 etfs["Tax group"] = etfs["category"].map(eb.tax_class).map(
     {"equity": "Equity", "other": "Gold / silver / international", "debt": "Liquid (slab rate)"})
 etfs["Prices from"] = etfs["symbol"].map(first_days)
-picked = st.data_editor(etfs, hide_index=True, width="stretch", key="etf_pick",
+picked = st.data_editor(etfs, hide_index=True, width="stretch", key=f"etf_pick_{v}",
                         disabled=["symbol", "name", "category", "Tax group", "Prices from"],
                         column_config={"Use": st.column_config.CheckboxColumn("Use", width="small")})
 symbols = picked.loc[picked["Use"], "symbol"].tolist()
@@ -89,68 +114,81 @@ if data.fixes:
 
 st.subheader("2. Strategy")
 c = st.columns(4)
-top_k = c[0].slider("Hold the top K ETFs", 1, 5, 2, key="etf_k")
-rebalance = c[1].radio("Rebalance", eb.REBALANCE, horizontal=True, key="etf_reb", format_func=str.capitalize,
+top_k = c[0].slider("Hold the top K ETFs", 1, 5, form.top_k, key=f"etf_k_{v}")
+rebalance = c[1].radio("Rebalance", eb.REBALANCE, index=eb.REBALANCE.index(form.rebalance), horizontal=True,
+                       key=f"etf_reb_{v}", format_func=str.capitalize,
                        help="Ranked at the close of the last trading day of the month / week; traded at the next close.")
-method = c[2].selectbox("Score", METHODS, format_func=METHOD_LABELS.get, key="etf_method",
+method = c[2].selectbox("Score", METHODS, index=METHODS.index(form.method), format_func=METHOD_LABELS.get,
+                        key=f"etf_method_{v}",
                         help="Plain return; return divided by volatility; or Sharpe-style average / volatility")
-skip = c[3].number_input("Skip the latest days", 0, 63, 0, key="etf_skip",
+skip = c[3].number_input("Skip the latest days", 0, 63, int(form.skip_recent), key=f"etf_skip_{v}",
                          help="Leave out the most recent N trading days from every lookback (21 = one month)")
-lookbacks = st.multiselect("Lookbacks", list(eb.LOOKBACK_CHOICES), default=[63, 126, 252],
-                           format_func=eb.LOOKBACK_CHOICES.get, key="etf_lb")
+saved_weights = dict(zip(form.lookbacks, form.weights))
+lookbacks = st.multiselect("Lookbacks", list(eb.LOOKBACK_CHOICES),
+                           default=[n for n in form.lookbacks if n in eb.LOOKBACK_CHOICES],
+                           format_func=eb.LOOKBACK_CHOICES.get, key=f"etf_lb_{v}")
 weights = []
 if lookbacks:
     wc = st.columns(len(lookbacks))
     for col, days in zip(wc, sorted(lookbacks)):
-        weights.append(col.number_input(f"Weight of {eb.LOOKBACK_CHOICES[days]}", 0.0, 10.0, 1.0, 0.5,
-                                        key=f"etf_w_{days}"))
+        weights.append(col.number_input(f"Weight of {eb.LOOKBACK_CHOICES[days]}", 0.0, 10.0,
+                                        float(saved_weights.get(days, 1.0)), 0.5, key=f"etf_w_{days}_{v}"))
 a = st.columns(4)
-abs_filter = a[0].checkbox("Absolute momentum filter", True, key="etf_abs",
+abs_filter = a[0].checkbox("Absolute momentum filter", form.abs_filter, key=f"etf_abs_{v}",
                            help="An ETF is bought only if it has itself gone up over the lookbacks; "
                                 "otherwise its slot goes to LIQUIDBEES / cash")
-threshold = a[1].number_input("... by more than (%)", -50.0, 100.0, 0.0, 0.5, key="etf_abs_thr", disabled=not abs_filter)
-safe = a[2].radio("Empty slots go to", [eb.LIQUID, "CASH"], horizontal=True, key="etf_safe",
-                  format_func=lambda v: "LIQUIDBEES" if v == eb.LIQUID else "Cash (0%)")
-band = a[3].number_input("Drift band (%)", 0.0, 50.0, 10.0, 1.0, key="etf_band",
+threshold = a[1].number_input("... by more than (%)", -50.0, 100.0, float(form.abs_threshold_pct), 0.5,
+                              key=f"etf_abs_thr_{v}", disabled=not abs_filter)
+safe = a[2].radio("Empty slots go to", [eb.LIQUID, "CASH"], index=[eb.LIQUID, "CASH"].index(form.safe_asset),
+                  horizontal=True, key=f"etf_safe_{v}",
+                  format_func=lambda x: "LIQUIDBEES" if x == eb.LIQUID else "Cash (0%)")
+band = a[3].number_input("Drift band (%)", 0.0, 50.0, float(form.drift_band_pct), 1.0, key=f"etf_band_{v}",
                          help="An ETF kept from last time is re-weighted only when it is this % away from "
                               "its target weight (fewer small trades, lower costs)")
 lq = st.columns(4)
-liquid_source = lq[0].radio("LIQUIDBEES return", ["yield", "prices"], key="etf_lq_src", horizontal=True,
-                            format_func=lambda v: "Fixed yearly yield" if v == "yield" else "Stored prices",
-                            disabled=safe != eb.LIQUID)
-liquid_yield = lq[1].number_input("Yield (% a year)", 0.0, 15.0, 5.0, 0.25, key="etf_lq_yield",
-                                  disabled=safe != eb.LIQUID or liquid_source != "yield")
+liquid_source = lq[0].radio("LIQUIDBEES return", ["yield", "prices"],
+                            index=["yield", "prices"].index(form.liquid_source), key=f"etf_lq_src_{v}",
+                            horizontal=True, disabled=safe != eb.LIQUID,
+                            format_func=lambda x: "Fixed yearly yield" if x == "yield" else "Stored prices")
+liquid_yield = lq[1].number_input("Yield (% a year)", 0.0, 15.0, float(form.liquid_yield_pct), 0.25,
+                                  key=f"etf_lq_yield_{v}", disabled=safe != eb.LIQUID or liquid_source != "yield")
 lq[2].caption("LIQUIDBEES pays its interest as daily extra units, which Yahoo's prices only partly show "
               "(they stay flat at Rs 1,000 since Dec-2025). 5% is close to its long-run return after fees.")
-ma_days = lq[3].number_input("Also above N-day average (0 = off)", 0, 400, 0, 50, key="etf_ma")
+ma_days = lq[3].number_input("Also above N-day average (0 = off)", 0, 400, int(form.ma_days), 50, key=f"etf_ma_{v}")
 d = st.columns(3)
-start = d[0].date_input("Start date", inside(dt.date(2018, 1, 1)), min_value=first_day,
-                        max_value=data.last_day, key="etf_start")
-end = d[1].date_input("End date", data.last_day, min_value=first_day,
-                      max_value=data.last_day, key="etf_end")
-capital = d[2].number_input("Capital (Rs)", 10_000.0, 1e10, 1_000_000.0, 100_000.0, key="etf_cap")
+start = d[0].date_input("Start date", inside(form.start), min_value=first_day, max_value=data.last_day,
+                        key=f"etf_start_{v}")
+end = d[1].date_input("End date", inside(form.end or data.last_day), min_value=first_day, max_value=data.last_day,
+                      key=f"etf_end_{v}")
+capital = d[2].number_input("Capital (Rs)", 10_000.0, 1e10, float(form.capital), 100_000.0, key=f"etf_cap_{v}")
 
 with st.expander("💸 Costs and capital gains tax (taken out at every rebalance)", expanded=False):
     k = st.columns(4)
-    brokerage = k[0].number_input("Brokerage per order (Rs)", 0.0, 100.0, 0.0, 1.0, key="etf_brok",
-                                  help="Delivery orders: Rs 0 at Dhan")
-    taxes_on = k[1].checkbox("STT, exchange, SEBI, stamp duty, GST", True, key="etf_taxes",
+    brokerage = k[0].number_input("Brokerage per order (Rs)", 0.0, 100.0, float(form.costs.delivery_brokerage), 1.0,
+                                  key=f"etf_brok_{v}", help="Delivery orders: Rs 0 at Dhan")
+    taxes_on = k[1].checkbox("STT, exchange, SEBI, stamp duty, GST", form.costs.include_taxes, key=f"etf_taxes_{v}",
                              help="STT on ETFs: 0.001% on SELL for equity ETFs, none for gold / silver / "
                                   "international / liquid ETFs")
-    slippage = k[2].number_input("Slippage (% of price)", 0.0, 2.0, 0.05, 0.01, key="etf_slip",
-                                 help="Buying a little above and selling a little below the close "
-                                      "(spread and ETF premium / discount)")
-    dp = k[3].number_input("DP charge per sell (Rs, + GST)", 0.0, 100.0, DP_CHARGE_RS, 0.5, key="etf_dp")
-    gains_on = st.checkbox("Capital gains tax", True, key="etf_cg")
+    slippage = k[2].number_input("Slippage (% of price)", 0.0, 2.0, float(form.costs.slippage_value), 0.01,
+                                 key=f"etf_slip_{v}", help="Buying a little above and selling a little below the "
+                                                           "close (spread and ETF premium / discount)")
+    dp = k[3].number_input("DP charge per sell (Rs, + GST)", 0.0, 100.0, float(form.costs.dp_charge), 0.5,
+                           key=f"etf_dp_{v}")
+    tax = form.tax
+    gains_on = st.checkbox("Capital gains tax", tax.enabled, key=f"etf_cg_{v}")
     t = st.columns(6)
-    stcg = t[0].number_input("Equity short-term %", 0.0, 50.0, 20.0, 0.5, key="etf_stcg", disabled=not gains_on)
-    ltcg = t[1].number_input("Equity long-term %", 0.0, 50.0, 12.5, 0.5, key="etf_ltcg", disabled=not gains_on)
-    exempt = t[2].number_input("Equity LTCG free (Rs/yr)", 0.0, 1e7, 125_000.0, 5_000.0, key="etf_exempt",
-                               disabled=not gains_on)
-    other = t[3].number_input("Gold/intl long-term %", 0.0, 50.0, 12.5, 0.5, key="etf_other", disabled=not gains_on)
-    slab = t[4].number_input("Your slab %", 0.0, 50.0, 30.0, 1.0, key="etf_slab", disabled=not gains_on,
+    stcg = t[0].number_input("Equity short-term %", 0.0, 50.0, float(tax.equity_stcg_pct), 0.5, key=f"etf_stcg_{v}",
+                             disabled=not gains_on)
+    ltcg = t[1].number_input("Equity long-term %", 0.0, 50.0, float(tax.equity_ltcg_pct), 0.5, key=f"etf_ltcg_{v}",
+                             disabled=not gains_on)
+    exempt = t[2].number_input("Equity LTCG free (Rs/yr)", 0.0, 1e7, float(tax.ltcg_exemption), 5_000.0,
+                               key=f"etf_exempt_{v}", disabled=not gains_on)
+    other = t[3].number_input("Gold/intl long-term %", 0.0, 50.0, float(tax.other_ltcg_pct), 0.5, key=f"etf_other_{v}",
+                              disabled=not gains_on)
+    slab = t[4].number_input("Your slab %", 0.0, 50.0, float(tax.slab_pct), 1.0, key=f"etf_slab_{v}",
+                             disabled=not gains_on,
                              help="Short-term gold / silver / international gains and all LIQUIDBEES gains")
-    cess = t[5].number_input("Cess %", 0.0, 10.0, 4.0, 1.0, key="etf_cess", disabled=not gains_on)
+    cess = t[5].number_input("Cess %", 0.0, 10.0, float(tax.cess_pct), 1.0, key=f"etf_cess_{v}", disabled=not gains_on)
     st.caption("Today's rules are used for the whole period: long-term = held more than 12 months; losses "
                "are set off (short-term against any gain, long-term only against long-term) and carried "
                "forward; tax due for the financial year so far is paid at every rebalance (a later loss "
@@ -250,6 +288,7 @@ with bt_tab:
         if s2.button("💾 Save to Strategy Library", key="etf_save"):
             try:
                 sid = eb.save_etf_strategy(name, st.session_state["etf_settings"])
+                store.save_run(sid, {}, result)              # shown as its last backtest in module 10
                 st.success(f"Saved '{name.strip()}' (strategy id {sid}).")
             except Exception as err:
                 st.error(f"Could not save: {err}")

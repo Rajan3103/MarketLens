@@ -32,6 +32,7 @@ def fakes(monkeypatch):
     monkeypatch.setattr(sr, "save_signal_strategy",
                         lambda name, s, url=None, auto=False: seen.setdefault("saved", (name, s, auto)) and 12)
     monkeypatch.setattr(sr, "list_signal_strategies", lambda url=None: pd.DataFrame(columns=["id", "name", "params"]))
+    monkeypatch.setattr("marketlens.backtest.store.save_run", lambda sid, params, result: seen.setdefault("run", sid))
     monkeypatch.setattr(wh, "recent_events", lambda limit=50, url=None: pd.DataFrame(
         [{"received": None, "source": "tradingview", "processed": True, "error": None, "message": {"secret": "***"}}]))
     return seen

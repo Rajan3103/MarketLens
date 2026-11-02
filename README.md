@@ -34,7 +34,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Indicator rules without code (AND / OR); backtest with entry / exit markers; scanner; Pine Script v6 export with webhook alerts; webhook receiver (FastAPI) that saves alerts, sends Telegram messages and places paper orders for "auto" strategies | ✅ |
 | | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
-| **Control centre** | 10 | Personal Analytics & Strategy Library | Strategies are already saved to the library from modules 2, 4 and 6 | 🛠️ |
+| **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
 | | 11 | Live Algo Trading & Bot Monitor | | 📋 |
 | | 12 | Telegram Bot Control Panel | | 📋 |
 
@@ -113,6 +113,22 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
   at 1/10 or 1/100 of the price around unit splits; these are repaired using only earlier prices.
   LIQUIDBEES' interest is paid as extra units that Yahoo's prices only partly show, so by default
   it earns a fixed yearly yield you set (5%).
+
+**10. Personal Analytics & Strategy Library**
+- **Strategy library:** every saved strategy (options, indicator, momentum, ETF) with its type, where it
+  was made, created date, last backtest (P&L, CAGR, drawdown, Sharpe, win rate) and forward-test results.
+  Buttons: Open in backtester (Options / Signals / ETF page, filled in), Open in simulator, Start forward
+  test, Deploy live (module 11), Duplicate, Rename, Delete (with a confirm tick; refused while a forward
+  test runs), Export / Import as JSON.
+- **Holdings & P&L:** Dhan holdings and today's positions when the keys are set, paper positions
+  otherwise: invested, current value, day P&L, open and total P&L, allocation by sector. One snapshot a
+  day goes into `holdings_snapshots` for the portfolio value chart.
+- **Trade journal:** every trade from paper orders, forward tests, live orders and the simulator, rebuilt
+  as round trips (open -> close, average price, costs shared by quantity). Filters by source, strategy,
+  dates, symbol, tag and result; notes, tags (setup / mistake / emotion, or your own), a 1-5 rating and a
+  screenshot (saved in `data/journal/`). Stats by tag, weekday and strategy.
+- **Performance:** combined realised P&L curve vs Nifty 50, drawdown, monthly and daily heatmaps, win rate,
+  best / worst days, profit factor and costs (simulator trades optional, as they are replayed past days).
 
 ---
 
@@ -219,6 +235,7 @@ Migrations so far:
 | 0006 | Simulator orders keep symbol, costs and reason |
 | 0007 | Orders and positions keep symbol, Security ID, segment, tag, costs (paper broker) |
 | 0008 | One forward-test row per strategy per day, with state, message and heartbeat |
+| 0009 | Trade journal: link to the trade, source, 1-5 rating; daily whole-account holdings snapshots |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -344,7 +361,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **688 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **714 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -381,7 +398,7 @@ MarketLens/
 │   ├── alerts/             # telegram.py (send a Telegram message)
 │   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
 │   └── scheduler/          # for the upcoming modules
-├── migrations/             # Alembic migrations 0001 .. 0008
+├── migrations/             # Alembic migrations 0001 .. 0009
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
 ├── data/universe/          # nifty50.csv, nifty200.csv, etfs.csv
@@ -414,10 +431,9 @@ default, DEMO data without keys, tests for every calculation).
 ### 9. ETF Momentum Portfolio (remaining)
 - Turning the current signal into paper rebalancing orders (and a monthly reminder).
 
-### 10. Personal Analytics & Strategy Library
-- Every saved strategy with its backtests, forward tests and notes in one place.
-- Your own P&L analytics: by day, month, weekday, strategy and instrument; win rate,
-  streaks, drawdown; trade journal.
+### 10. Personal Analytics & Strategy Library (remaining)
+- Saving holdings snapshots from the scheduler as well (today: when the page is opened).
+- Live (Dhan) trades in the journal once module 11 places live orders.
 
 ### 11. Live Algo Trading & Bot Monitor
 - A **Dhan live broker** using the same `Broker` interface as the paper broker, so strategies
