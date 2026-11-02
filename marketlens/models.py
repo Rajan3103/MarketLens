@@ -425,7 +425,9 @@ class Order(Base):
         one_of("side", ["BUY", "SELL"]),
         one_of("order_type", ["MARKET", "LIMIT", "SL", "SL-M"]),
         one_of("product", ["INTRADAY", "MARGIN", "CNC"]),
-        one_of("status", ["PENDING", "PLACED", "PARTIAL", "FILLED", "REJECTED", "CANCELLED"]),
+        # WAITING_CONFIRMATION: a live order waiting for your Confirm / Reject on Telegram (AUTO_TRADE=false)
+        one_of("status", ["PENDING", "PLACED", "PARTIAL", "FILLED", "REJECTED", "CANCELLED",
+                          "WAITING_CONFIRMATION"]),
     )
 
 
@@ -543,6 +545,18 @@ class BrokerSession(Base):
         one_of("broker", ["dhan"]),
         one_of("status", ["active", "expired", "failed"]),
     )
+
+
+class KillSwitchEvent(Base):
+    """Each time the kill switch is switched on or off. On = no new orders for the rest of that day."""
+    __tablename__ = "kill_switch_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ts: Mapped[dt.datetime] = mapped_column(index=True)
+    mode: Mapped[str] = mapped_column(server_default="paper")
+    active: Mapped[bool]
+    reason: Mapped[str] = mapped_column(Text)
+    squared_off: Mapped[bool] = mapped_column(server_default=text("false"))   # open positions were closed
+    __table_args__ = (one_of("mode", ["paper", "live"]),)
 
 
 class DownloadProgress(Base):

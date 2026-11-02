@@ -22,12 +22,16 @@ def is_configured() -> bool:
 
 
 # Send one text message; returns True when Telegram accepted it.
-def send_message(text: str, timeout: float = 10) -> bool:
+# buttons = [("✅ Confirm", "confirm:12"), ...] adds tap buttons under the message (the bot gets the data).
+def send_message(text: str, timeout: float = 10, buttons: list[tuple[str, str]] | None = None) -> bool:
     if not is_configured():
         log.info("Telegram key not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID): message not sent: %s", text[:80])
         return False
-    body = json.dumps({"chat_id": config.TELEGRAM_CHAT_ID, "text": text[:4000],
-                       "disable_web_page_preview": True}).encode()
+    message = {"chat_id": config.TELEGRAM_CHAT_ID, "text": text[:4000], "disable_web_page_preview": True}
+    if buttons:
+        message["reply_markup"] = {"inline_keyboard": [[{"text": label, "callback_data": data}
+                                                        for label, data in buttons]]}
+    body = json.dumps(message).encode()
     request = urllib.request.Request(API.format(token=config.TELEGRAM_BOT_TOKEN), data=body,
                                      headers={"Content-Type": "application/json"})
     try:

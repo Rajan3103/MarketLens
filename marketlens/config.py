@@ -112,6 +112,14 @@ AUTO_TRADE = get_bool("AUTO_TRADE", False)
 MAX_DAILY_LOSS_RS = get_number("MAX_DAILY_LOSS_RS", 2000.0, float, minimum=0)
 MAX_ORDERS_PER_SECOND = get_number("MAX_ORDERS_PER_SECOND", 5, int, minimum=1)
 MAX_OPEN_POSITIONS = get_number("MAX_OPEN_POSITIONS", 5, int, minimum=1)
+# Most money one new order may use (qty x price); 0 = no limit
+MAX_CAPITAL_PER_TRADE_RS = get_number("MAX_CAPITAL_PER_TRADE_RS", 100_000.0, float, minimum=0)
+# Most one strategy may lose in a day (a strategy's own "max_loss_rs" setting wins); 0 = no limit
+MAX_STRATEGY_LOSS_RS = get_number("MAX_STRATEGY_LOSS_RS", 1000.0, float, minimum=0)
+# Kill switch: also close every open position when the daily loss limit is hit
+SQUARE_OFF_ON_KILL = get_bool("SQUARE_OFF_ON_KILL", False)
+# Live orders waiting for your Telegram Confirm are cancelled after this many minutes
+CONFIRM_TIMEOUT_MIN = get_number("CONFIRM_TIMEOUT_MIN", 5, int, minimum=1)
 
 # ---- AWS server (used later, when the app runs on AWS) ----
 AWS_REGION = get_str("AWS_REGION", "ap-south-1")      # ap-south-1 = Mumbai

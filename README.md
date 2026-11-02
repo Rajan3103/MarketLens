@@ -8,14 +8,17 @@ dashboards, builds and backtests option strategies minute by minute, replays pas
 practice, and forward-tests strategies on the live market with virtual money. It also builds
 indicator strategies (with TradingView Pine Script export and webhook alerts), backtests an ETF
 momentum portfolio after costs and capital gains tax, and keeps every strategy, trade and journal
-note in one Strategy Library. Later it will place real orders through the **Dhan** API, run a
-Telegram bot and run on an AWS server.
+note in one Strategy Library. It has a live **Dhan** broker behind an order service that checks
+risk rules before every order (daily loss kill switch, lot sizes, capital, open positions, Dhan login)
+and asks for your Telegram confirmation for live orders. Next: a bot monitor page, a Telegram bot and
+an AWS server.
 
 > Everything in this app is historical analysis for learning.
 > It is **not** investment advice or a live trading recommendation.
 
-**Safety first:** trading is **paper (virtual money) by default**. Real orders will only ever be
-possible with `TRADING_MODE=live` in `.env`. Every page works without API keys, using clearly
+**Safety first:** trading is **paper (virtual money) by default**. Real orders are only possible
+with `TRADING_MODE=live` in `.env`, and with `AUTO_TRADE=false` (the default) every live order waits
+for your Confirm. Every page works without API keys, using clearly
 labelled **DEMO** data.
 
 ---
@@ -38,7 +41,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
-| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; bot monitor page next | 🛠️ |
+| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; bot monitor page next | 🛠️ |
 | | 12 | Telegram Bot Control Panel | | 📋 |
 
 ### Highlights of the ready modules
@@ -133,6 +136,18 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 - **Performance:** combined realised P&L curve vs Nifty 50, drawdown, monthly and daily heatmaps, win rate,
   best / worst days, profit factor and costs (simulator trades optional, as they are replayed past days).
 
+**11. Live Algo Trading (partly ready)**
+- **Dhan live broker:** MARKET / LIMIT / SL / SL-M orders, modify, cancel, super orders (entry + target +
+  stop loss), order book, trade book, positions, holdings, funds, exit-all. Every call first checks the
+  Dhan keys and `TRADING_MODE=live`; F&O quantities are rounded down to whole lots; tokens never reach the logs.
+- **Daily Dhan login:** paste / TOTP / API-key consent / renew, a check that the token lasts until 15:30,
+  and a Telegram reminder at 08:45 on weekdays (setup step 11).
+- **Order service:** every signal is saved, checked (kill switch, daily and strategy loss, market open,
+  Dhan login, lot sizes, capital per trade, open positions, orders per second) and only then sent;
+  live orders wait for your Telegram Confirm when `AUTO_TRADE=false` (setup step 13).
+- **Kill switch:** switches on when today's loss reaches `MAX_DAILY_LOSS_RS`, blocks new orders for the
+  rest of the day (exits still allowed) and, if you chose so, closes every position.
+
 ---
 
 ## Setup, step by step (Windows + VS Code, or Ubuntu)
@@ -188,13 +203,14 @@ and is never uploaded. Restart the app after changing it.
 
 | Setting | What it is for | Without it |
 | --- | --- | --- |
-| `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` | Live option chain, expired options data, margin, (later) orders. Dhan is the only broker | Clearly labelled DEMO data |
+| `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` | Live option chain, expired options data, margin and live orders. Dhan is the only broker. The token lasts 24 hours (step 11) | Clearly labelled DEMO data; live orders refused |
+| `DHAN_API_KEY`, `DHAN_API_SECRET` (optional) | Daily login through Dhan's consent page instead of pasting a token (step 11) | Use paste or TOTP |
 | `DATABASE_URL`, `TEST_DATABASE_URL` | Your PostgreSQL database and a separate test database | Database pages show how to fix it |
-| `TRADING_MODE` | `paper` (default) or `live` | Paper |
+| `TRADING_MODE`, `AUTO_TRADE` | `paper` (default) or `live`; `AUTO_TRADE=false` (default) = you confirm every live order | Paper; confirm each order |
 | `PAPER_CAPITAL` | Virtual money for the paper broker (default 500000) | Rs 5,00,000 |
-| `MAX_DAILY_LOSS_RS`, `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND` | Risk limits | Safe defaults |
+| `MAX_DAILY_LOSS_RS`, `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND`, `MAX_CAPITAL_PER_TRADE_RS`, `MAX_STRATEGY_LOSS_RS`, `SQUARE_OFF_ON_KILL`, `CONFIRM_TIMEOUT_MIN` | Risk limits (order service) | Safe defaults |
 | `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | A Telegram message for every webhook alert (module 7); the bot later (module 12) | No messages are sent |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Webhook alerts (module 7), the 08:45 login reminder, order and kill-switch messages, Confirm / Reject buttons for live orders; the bot later (module 12) | No messages are sent (they are still saved in `notifications`); confirm live orders on the command line |
 
 **Settings & Status** shows which keys are still missing.
 
@@ -240,6 +256,7 @@ Migrations so far:
 | 0007 | Orders and positions keep symbol, Security ID, segment, tag, costs (paper broker) |
 | 0008 | One forward-test row per strategy per day, with state, message and heartbeat |
 | 0009 | Trade journal: link to the trade, source, 1-5 rating; daily whole-account holdings snapshots |
+| 0010 | Order status `WAITING_CONFIRMATION` (live orders waiting for your Confirm); `kill_switch_events` |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -409,7 +426,41 @@ and live orders are also saved in the `orders` table (mode `live`) for the journ
 
 Dhan only accepts orders from your **whitelisted static IP** (web.dhan.co → Access DhanHQ APIs),
 which is why live trading is meant to run on the AWS server. Webhook "auto" orders (module 7) stay
-paper-only until module 11 adds its risk controls.
+paper-only until they are moved onto the order service below.
+
+### 13. The order service (risk checks before every order)
+
+Strategies send signals through `submit_signal()` (`marketlens/trading/order_service.py`). It saves the
+signal, runs the risk checks and only then sends the order through `get_broker()`. Every leg must pass,
+otherwise **no** leg is sent:
+
+| Rule | Setting in `.env` |
+| --- | --- |
+| Market open (09:15-15:30, Monday to Friday) | — |
+| Dhan login valid until 15:30 today (live only) | — (see step 11) |
+| F&O quantity is a whole number of lots | — |
+| Money one new order may use (qty × price) | `MAX_CAPITAL_PER_TRADE_RS` |
+| Positions open at the same time | `MAX_OPEN_POSITIONS` |
+| One strategy's loss today (a strategy's own `max_loss_rs` wins) | `MAX_STRATEGY_LOSS_RS` |
+| Total loss today → **kill switch** | `MAX_DAILY_LOSS_RS`, `SQUARE_OFF_ON_KILL` |
+| Orders per second | `MAX_ORDERS_PER_SECOND` |
+
+Orders that only reduce or close a position skip the money rules, so you can always get out. When the
+daily loss limit is hit, the kill switch blocks every new order for the rest of the day (and closes all
+positions if `SQUARE_OFF_ON_KILL=true`). In **live** mode with `AUTO_TRADE=false` the order waits as
+`WAITING_CONFIRMATION` and Telegram asks you to Confirm / Reject (cancelled after `CONFIRM_TIMEOUT_MIN`).
+Until the Telegram bot (module 12) answers the buttons, use the command line:
+
+```bash
+python -m marketlens.trading.order_service status
+python -m marketlens.trading.order_service confirm 12     # 12 = the signal number in the message
+python -m marketlens.trading.order_service reject 12
+python -m marketlens.trading.order_service kill --square-off
+python -m marketlens.trading.order_service unkill
+```
+
+Every step is written to `logs/marketlens.log`, orders to `orders`, messages to `notifications` and
+errors to `error_log`. Run `alembic upgrade head` once (migration 0010).
 
 ---
 
@@ -441,6 +492,8 @@ them says so. Page **3 → What is stored** lists what is in your database, and
    weekday and strategy to see what works for you.
 8. Check your **combined performance** against Nifty 50 on page 10, and reopen, copy or share any
    strategy from the Strategy Library (JSON export / import).
+9. Only when you are ready: do the daily Dhan login (step 11), set `TRADING_MODE=live` and keep
+   `AUTO_TRADE=false`, so every order passes the risk checks and waits for your Confirm (steps 12-13).
 
 For ETF investing: sync the ETF prices (step 6), backtest on page **9**, check how sensitive the
 result is in the **Parameter sweep** tab, compare any claimed return in **Check a claim**, and look
@@ -457,7 +510,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **743 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **767 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -489,7 +542,8 @@ MarketLens/
 │   ├── backtest/           # metrics, engine (Trade, BacktestResult), store, charts, report, ui,
 │   │                       # options_bt.py (the options backtester and its rules)
 │   ├── simulator/          # replay.py (replay clock and virtual trading)
-│   ├── trading/            # forward.py (forward-test runner), orders.py (signal -> paper order)
+│   ├── trading/            # forward.py (forward-test runner), orders.py (webhook signal -> paper order),
+│   │                       # order_service.py (risk checks, kill switch, confirmations)
 │   ├── signals/            # indicators, rules.py (conditions), backtest.py (backtest, chart, scanner),
 │   │                       # pine.py (Pine Script v6 export + validator)
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
@@ -497,7 +551,7 @@ MarketLens/
 │   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
 │   └── scheduler/          # for the upcoming modules
-├── migrations/             # Alembic migrations 0001 .. 0009
+├── migrations/             # Alembic migrations 0001 .. 0010
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
 ├── data/universe/          # nifty50.csv, nifty200.csv, etfs.csv
@@ -532,20 +586,25 @@ default, DEMO data without keys, tests for every calculation).
 
 ### 10. Personal Analytics & Strategy Library (remaining)
 - Saving holdings snapshots from the scheduler as well (today: when the page is opened).
-- Live (Dhan) trades in the journal once module 11 places live orders.
+- Live fills in the journal: live orders are saved today (mode `live`), but their fills are not yet
+  read back from Dhan's trade book.
 
 ### 11. Live Algo Trading & Bot Monitor
 - ✅ Done: the **Dhan live broker** (same `Broker` interface as the paper broker, chosen by
   `get_broker()` only when `TRADING_MODE=live`), the daily login check and the 08:45 reminder.
-- Strategies and webhook "auto" orders running through `get_broker()`.
-- Risk controls before every order: `MAX_DAILY_LOSS_RS` (stop for the day),
-  `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND`, a kill switch.
-- Live view of running bots, orders, positions and errors.
+- ✅ Done: the **order service** with risk checks before every order, the kill switch and
+  Telegram Confirm / Reject for live orders (setup step 13).
+- Strategies and webhook "auto" orders running through the order service.
+- Per-strategy P&L for live trades (fills from Dhan's trade book), so the strategy loss limit also
+  works live (today only the daily total uses Dhan's real numbers).
+- **Bot Monitor page:** running bots, waiting confirmations, orders, positions, notifications,
+  errors (`error_log`) and kill-switch buttons.
 - Dhan only accepts orders from a whitelisted static IP, so live trading will run on the server.
 
 ### 12. Telegram Bot Control Panel
 - Alerts on Telegram: entries, exits, stop losses, daily P&L, errors.
-- Commands: status, positions, P&L, stop a strategy, exit all.
+- Commands: status, positions, P&L, stop a strategy, exit all; answering the Confirm / Reject buttons
+  (today: `python -m marketlens.trading.order_service confirm <signal>`).
 - Price alerts ("tell me when NIFTY goes above 25,500").
 
 ### Platform
@@ -568,6 +627,11 @@ default, DEMO data without keys, tests for every calculation).
   written; check it on Dhan's pricing page. It also applies to paper delivery sells.
 - Holdings snapshots (page 10) are saved when the page is opened, so a day without a visit has no
   point on the value chart. Day P&L is left blank when yesterday's close is not known.
+- The order service's market-open rule knows weekends but not exchange holidays (the broker rejects
+  those orders). Paper P&L for the loss limits uses the last saved prices of each position.
+- If one leg of a multi-leg order is rejected after another was sent, you get a warning; the sent leg
+  is not undone automatically.
+- The daily Dhan login always needs you (2FA): MarketLens reminds you but never logs in by itself.
 
 ---
 

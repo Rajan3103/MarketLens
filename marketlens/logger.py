@@ -51,3 +51,19 @@ def get_logger(name: str) -> logging.Logger:
     # Do not also pass messages to Python's main logger (avoids double lines)
     logger.propagate = False
     return logger
+
+
+# Write an error to the log file AND the error_log table (the Bot Monitor shows them). Never raises.
+def record_error(module: str, message: str, details: dict | None = None, url: str | None = None,
+                 level: str = "ERROR"):
+    """Example: record_error(__name__, "Dhan refused the order", {"signal_id": 12})"""
+    logger = get_logger(module)
+    logger.log(logging.WARNING if level == "WARNING" else logging.ERROR, message)
+    try:
+        from marketlens.db import get_session
+        from marketlens.models import ErrorLog
+        with get_session(url) as session:
+            session.add(ErrorLog(level=level, module=module, message=message, details=details))
+            session.commit()
+    except Exception as err:                     # no database: the log file still has the error
+        logger.warning("Could not save the error in error_log: %s", err)
