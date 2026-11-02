@@ -38,7 +38,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
-| | 11 | Live Algo Trading & Bot Monitor | | 📋 |
+| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; bot monitor page next | 🛠️ |
 | | 12 | Telegram Bot Control Panel | | 📋 |
 
 ### Highlights of the ready modules
@@ -350,6 +350,67 @@ own computer. On the AWS server (with its static IP, a domain name and an HTTPS 
 same receiver runs behind HTTPS and TradingView can reach it. Until then, test with the fake alerts
 above.
 
+### 11. Daily Dhan login (needs you every morning, because of 2FA)
+
+A Dhan access token lasts **24 hours**. Dhan's login always needs you (password + 2FA, or the code
+from your authenticator app), so MarketLens never logs in by itself. **Every trading day before 09:00**,
+do ONE of these:
+
+| Way | What you do | Command |
+| --- | --- | --- |
+| Paste a web token | web.dhan.co → My Profile → Access DhanHQ APIs → generate an Access Token, copy it | `python -m marketlens.broker.session paste` |
+| PIN + TOTP (TOTP switched on in Dhan) | Type your PIN and the 6-digit code from your authenticator app (never saved) | `python -m marketlens.broker.session totp` |
+| API key + secret (`DHAN_API_KEY`, `DHAN_API_SECRET` in `.env`, valid 12 months) | Open the printed Dhan page, log in with 2FA, paste the `tokenId` from the address bar | `python -m marketlens.broker.session consent` |
+| Renew yesterday's web token (before it expires) | Nothing else | `python -m marketlens.broker.session renew` |
+
+Then check it (it must say `active`) and restart the app and background processes:
+
+```bash
+python -m marketlens.broker.session check
+```
+
+Each new token is tested first and then written to the `DHAN_ACCESS_TOKEN` line of `.env` only (the
+other lines stay as they are). Every check is saved in the `broker_sessions` table. The token is never
+written to a log. `python -m marketlens.broker.session steps` prints these steps again.
+
+**08:45 Telegram reminder** (needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`): on weekdays it checks
+the login and sends the steps above if the token is missing, expired, or expires before 15:30. Keep it
+running in its own terminal:
+
+```bash
+python -m marketlens.broker.session remind --daily
+```
+
+or let the computer start it at 08:45 (it checks once and stops):
+
+```powershell
+# Windows (run once in PowerShell; use the full path of your MarketLens folder)
+schtasks /Create /TN "MarketLens Dhan login reminder" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 08:45 /TR "C:\Users\YOU\MarketLens\.venv\Scripts\python.exe -m marketlens.broker.session remind" /F
+```
+
+```bash
+# Ubuntu (crontab -e; the server clock must be on India time, or change 45 8 to UTC 15 3)
+45 8 * * 1-5 cd /home/ubuntu/MarketLens && .venv/bin/python -m marketlens.broker.session remind
+```
+
+On Windows, Task Scheduler starts in `C:\Windows\System32`: set **Start in** to your MarketLens folder
+in the task's Actions tab, so `.env` is found.
+
+### 12. Live trading (only when you are ready)
+
+Orders go through `get_broker()` (`marketlens/broker/factory.py`): the **paper broker** unless
+`TRADING_MODE=live` in `.env`, then the **Dhan broker** (`marketlens/broker/dhan_broker.py`). The Dhan
+broker can place, modify and cancel MARKET / LIMIT / SL / SL-M orders, place **super orders** (entry +
+target + stop loss, Dhan's replacement for bracket orders), read the order book, trade book, positions,
+holdings and funds, and **exit all**. Before **every** call it checks that the Dhan keys are set and
+`TRADING_MODE=live`; otherwise nothing is sent. F&O quantities are rounded **down** to whole lots
+(less than one lot is refused), symbols are matched to Dhan's Security ID with the instrument master,
+and live orders are also saved in the `orders` table (mode `live`) for the journal (page 10).
+
+Dhan only accepts orders from your **whitelisted static IP** (web.dhan.co → Access DhanHQ APIs),
+which is why live trading is meant to run on the AWS server. Webhook "auto" orders (module 7) stay
+paper-only until module 11 adds its risk controls.
+
 ---
 
 ## Where the data comes from
@@ -396,7 +457,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **714 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **743 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -420,7 +481,8 @@ MarketLens/
 │   ├── overview.py         # module 1: cards, movers, breadth, sector heatmap
 │   ├── utils.py, logger.py, ui.py   # @retry / RateLimiter, logging, shared page pieces
 │   ├── broker/             # data clients (Dhan or DEMO), instruments, base.py (Broker interface),
-│   │                       # paper.py (PaperBroker: virtual orders and positions)
+│   │                       # paper.py (PaperBroker), dhan_broker.py (live Dhan orders), factory.py
+│   │                       # (paper unless TRADING_MODE=live), session.py (daily login, 08:45 reminder)
 │   ├── ingest/             # downloads into PostgreSQL: prices, candles, option data;
 │   │                       # clean.py (repairs 10x / 100x price errors in Yahoo data)
 │   ├── options/            # pricing (Black-Scholes, IV, Greeks), expiries, chain, strategies, strike_select
@@ -473,8 +535,9 @@ default, DEMO data without keys, tests for every calculation).
 - Live (Dhan) trades in the journal once module 11 places live orders.
 
 ### 11. Live Algo Trading & Bot Monitor
-- A **Dhan live broker** using the same `Broker` interface as the paper broker, so strategies
-  switch from paper to live without code changes, **only when `TRADING_MODE=live`**.
+- ✅ Done: the **Dhan live broker** (same `Broker` interface as the paper broker, chosen by
+  `get_broker()` only when `TRADING_MODE=live`), the daily login check and the 08:45 reminder.
+- Strategies and webhook "auto" orders running through `get_broker()`.
 - Risk controls before every order: `MAX_DAILY_LOSS_RS` (stop for the day),
   `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND`, a kill switch.
 - Live view of running bots, orders, positions and errors.
@@ -489,8 +552,6 @@ default, DEMO data without keys, tests for every calculation).
 - **Scheduler:** daily price sync, option-data downloads after market close, morning checks.
 - **AWS deployment** (Mumbai region, static IP for Dhan orders) with the app and background
   processes running all day.
-- **Dhan automatic login** with `DHAN_API_KEY` / `DHAN_API_SECRET` instead of pasting a new
-  access token every day.
 - Index futures in the backtester; changing lot sizes over history.
 
 ### Known limits today
