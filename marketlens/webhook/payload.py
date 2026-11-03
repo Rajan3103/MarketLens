@@ -33,7 +33,7 @@ class SecretError(ValueError):
 # The address alerts are sent to: this computer now, the AWS server's static IP once it is set.
 def base_url() -> str:
     host = config.SERVER_STATIC_IP if config.is_set(config.SERVER_STATIC_IP) else "localhost"
-    return f"http://{host}:{config.WEBHOOK_PORT}"
+    return f"http://{host}:{config.API_PORT}"
 
 
 # The full webhook addresses (Chartink's has the secret placeholder in it).

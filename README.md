@@ -94,7 +94,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
   `WEBHOOK_SECRET` is set, the JSON for TradingView and Chartink, and the last 50 events.
 - **Save to Strategy Library**, optionally with **Auto**: webhook alerts naming the strategy then
   place paper orders by themselves.
-- **Webhook receiver** (`python -m marketlens.webhook.server`): checks the secret (401 if wrong),
+- **Webhook receiver** (part of the backend API, `python -m marketlens.api`): checks the secret (401 if wrong),
   ignores the same alert repeated within 10 s, saves every event and a signal, sends a Telegram
   message, and places a paper order for "auto" strategies.
 
@@ -222,6 +222,7 @@ and is never uploaded. Restart the app after changing it.
 | `PAPER_CAPITAL` | Virtual money for the paper broker (default 500000) | Rs 5,00,000 |
 | `MAX_DAILY_LOSS_RS`, `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND`, `MAX_CAPITAL_PER_TRADE_RS`, `MAX_STRATEGY_LOSS_RS`, `SQUARE_OFF_ON_KILL`, `CONFIRM_TIMEOUT_MIN` | Risk limits (order service) | Safe defaults |
 | `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
+| `API_PORT` | Port of the backend API, which also receives the webhook alerts (default 8000; the old name `WEBHOOK_PORT` still works) | 8000 |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Webhook alerts (module 7), the 08:45 login reminder, order and kill-switch messages, Confirm / Reject buttons for live orders; the bot later (module 12) | No messages are sent (they are still saved in `notifications`); confirm live orders on the command line |
 
 **Settings & Status** shows which keys are still missing.
@@ -353,13 +354,14 @@ python -m marketlens.trading.forward --strategy 3 --once     # one cycle, for te
 
    and add the line `WEBHOOK_SECRET=<what it printed>` to `.env`.
 
-2. Start the receiver (a second terminal; it runs until `Ctrl + C`):
+2. Start the backend API, which also receives the alerts (a second terminal; it runs until `Ctrl + C`):
 
    ```bash
-   python -m marketlens.webhook.server
+   python -m marketlens.api
    ```
 
-   Check it: open http://localhost:8000/health (it answers `{"status": "ok", ...}`).
+   (`python -m marketlens.webhook.server` still works: it starts the same server.)
+   Check it: open http://localhost:8000/webhook/health (it answers `{"status": "ok", ...}`).
 
 3. Send a fake alert from PowerShell (replace `YOUR_SECRET` with your `WEBHOOK_SECRET`):
 
@@ -494,6 +496,28 @@ then it stops. In live confirm mode, stop-loss and target exits also wait for yo
 that comes before you confirmed its entry cancels that entry. A strategy cannot be deployed while its
 forward test runs, because both use the same paper account.
 
+### 15. The backend API (for the future web frontend)
+
+```bash
+python -m marketlens.api                 # http://127.0.0.1:8000 (API_PORT); restarts when you save a .py file
+python -m marketlens.api --no-reload     # without restarting (the default on the server)
+```
+
+Open **http://127.0.0.1:8000/docs**: every endpoint is listed there with a *Try it out* button.
+
+| Endpoint | Answer |
+| --- | --- |
+| `GET /api/health` | `{status, version, database: ok/fail, mode: PAPER/LIVE, demo: true/false}` |
+| `GET /api/settings/status` | which keys are set (never their values), trading mode, database |
+| `GET /api/market/history?symbol=RELIANCE.NS&period=1y` | daily OHLC, volume, 20 / 50-day averages and crossover signals |
+| `POST /webhook/tradingview`, `POST /webhook/chartink`, `GET /webhook/health` | the webhook receiver (step 10) |
+
+Errors always come back as `{"error": "<plain-English message>"}` (400 when the request is wrong, 500 when
+something broke); the Python details go to `logs/marketlens.log` and `error_log`, never to the browser.
+A new group of endpoints is a new file in `marketlens/api/routes/` with a `router`: it is added
+automatically. `marketlens/api/schemas.py` turns pandas tables (`df_to_records`) and Plotly charts
+(`fig_to_json`) into JSON, so a frontend can show the same tables and charts as the Streamlit pages.
+
 ---
 
 ## Where the data comes from
@@ -542,7 +566,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **781 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **790 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -590,7 +614,9 @@ MarketLens/
 │   │                       # live_runner.py (deployed strategies), monitor.py (page 11 data)
 │   ├── signals/            # indicators, rules.py (conditions), backtest.py (backtest, chart, scanner),
 │   │                       # pine.py (Pine Script v6 export + validator)
-│   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
+│   ├── api/                # backend API (FastAPI): main.py (create_app, errors, /api/health), schemas.py
+│   │                       # (answer shapes, df_to_records, fig_to_json), routes/ (settings, market, webhook)
+│   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (webhook router)
 │   ├── alerts/             # telegram.py (send a Telegram message)
 │   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
@@ -652,6 +678,7 @@ default, DEMO data without keys, tests for every calculation).
 - Price alerts ("tell me when NIFTY goes above 25,500").
 
 ### Platform
+- **Web frontend** on the backend API (more endpoints: option chain, backtests, strategies, orders).
 - **Scheduler:** daily price sync, option-data downloads after market close, morning checks.
 - **AWS deployment** (Mumbai region, static IP for Dhan orders) with the app and background
   processes running all day.

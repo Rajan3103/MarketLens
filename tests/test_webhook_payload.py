@@ -47,7 +47,7 @@ def test_parse_chartink():
 # localhost now, the AWS static IP later; the real secret is never in the addresses.
 def test_urls(monkeypatch):
     monkeypatch.setattr(config, "SERVER_STATIC_IP", "")
-    monkeypatch.setattr(config, "WEBHOOK_PORT", 8000)
+    monkeypatch.setattr(config, "API_PORT", 8000)
     assert wh.webhook_urls()["tradingview"] == "http://localhost:8000/webhook/tradingview"
     monkeypatch.setattr(config, "SERVER_STATIC_IP", "13.200.1.2")
     monkeypatch.setattr(config, "WEBHOOK_SECRET", SECRET)

@@ -70,7 +70,7 @@ others = {
     "DEMO_MODE": config.DEMO_MODE,
     "DATA_SOURCE": config.DATA_SOURCE,
     "DOWNLOAD_DIR": config.DOWNLOAD_DIR,
-    "WEBHOOK_PORT": config.WEBHOOK_PORT,
+    "API_PORT": config.API_PORT,
     "DATABASE_URL": config.safe_database_url(),  # password hidden
     "TEST_DATABASE_URL": config.safe_database_url(config.TEST_DATABASE_URL) or "(not set)",
     "AWS_REGION": config.AWS_REGION,

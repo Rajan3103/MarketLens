@@ -1,11 +1,12 @@
 """The webhook receiver: TradingView and Chartink alerts arrive here (module 7).
 
 Start it (it keeps running until Ctrl+C):
-    python -m marketlens.webhook.server                 # port from WEBHOOK_PORT (8000)
+    python -m marketlens.api                            # the backend API, which includes these endpoints
+    python -m marketlens.webhook.server                 # shortcut: starts the same server (port API_PORT, 8000)
 
     POST /webhook/tradingview                 JSON {secret, strategy, symbol, action BUY/SELL/EXIT, qty or lots, price, note}
     POST /webhook/chartink?secret=<secret>    Chartink's scan alert (stocks, trigger_prices, scan_name): one signal per stock
-    GET  /health                              {"status": "ok"}
+    GET  /webhook/health                      {"status": "ok"} (the old address /health still works)
 
 For every alert:
   1. a wrong or missing secret -> 401 (logged, and saved as a rejected event);
@@ -23,7 +24,7 @@ import datetime as dt
 import json
 import time
 
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import APIRouter, BackgroundTasks, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from marketlens import config
@@ -155,66 +156,84 @@ class Receiver:
         return 200, {"status": "ok", "signals": ids, "orders": [r[2] for r in results]}, [r[1] for r in results]
 
 
-# The FastAPI app (tests pass their own database address, clock, Telegram and order functions).
+# The receiver of this app (made on first use when the app did not set one).
+def receiver_of(request: Request) -> Receiver:
+    if getattr(request.app.state, "receiver", None) is None:
+        request.app.state.receiver = Receiver()
+    return request.app.state.receiver
+
+
+# Read the body as JSON (None when it is not JSON).
+async def body_of(request: Request):
+    try:
+        return await request.json()
+    except Exception:
+        text = (await request.body()).decode(errors="replace")
+        return {"raw": text[:2000]} if text else None
+
+
+# Send the answer and the Telegram messages (after answering, so TradingView never waits).
+def answer(receiver: Receiver, status: int, body: dict, texts: list[str], background: BackgroundTasks) -> JSONResponse:
+    for text in texts:
+        background.add_task(receiver.notify, text)
+    return JSONResponse(body, status_code=status, background=background)
+
+
+# What GET /webhook/health (and the old GET /health) answer.
+def health_info() -> dict:
+    return {"status": "ok", "time": dt.datetime.now(IST).isoformat(timespec="seconds"), "secret_set": wh.secret_ready()}
+
+
+# The webhook endpoints, included by the backend API (marketlens/api) under /webhook.
+router = APIRouter(prefix="/webhook", tags=["webhook"])
+
+
+@router.get("/health")
+def health():
+    """Is the receiver running?"""
+    return health_info()
+
+
+@router.post("/tradingview")
+async def tradingview(request: Request, background: BackgroundTasks):
+    """TradingView alert: {secret, strategy, symbol, action, qty or lots, price, note}."""
+    receiver = receiver_of(request)
+    message = await body_of(request)
+    if message is None or "raw" in (message if isinstance(message, dict) else {}):
+        receiver.save_event("tradingview", message, False, "400 not JSON")
+        return JSONResponse({"status": "refused", "error": "The message must be JSON"}, status_code=400)
+    return answer(receiver, *receiver.receive("tradingview", message), background)
+
+
+@router.post("/chartink")
+async def chartink(request: Request, background: BackgroundTasks, secret: str | None = None):
+    """Chartink scan alert; the secret is in the address: /webhook/chartink?secret=..."""
+    receiver = receiver_of(request)
+    message = await body_of(request)
+    return answer(receiver, *receiver.receive("chartink", message or {}, secret), background)
+
+
+# The whole backend API app, with this receiver in it (tests pass their own database, clock, Telegram, orders).
 def create_app(url: str | None = None, clock=time.monotonic, notify=None, execute=None) -> FastAPI:
-    app = FastAPI(title="MarketLens webhook receiver", version="1.0")
-    app.state.receiver = Receiver(url, clock, notify, execute)
-
-    # Read the body as JSON (None when it is not JSON).
-    async def body_of(request: Request):
-        try:
-            return await request.json()
-        except Exception:
-            text = (await request.body()).decode(errors="replace")
-            return {"raw": text[:2000]} if text else None
-
-    # Send the answer and the Telegram messages (after answering, so TradingView never waits).
-    def answer(status: int, body: dict, texts: list[str], background: BackgroundTasks) -> JSONResponse:
-        for text in texts:
-            background.add_task(app.state.receiver.notify, text)
-        return JSONResponse(body, status_code=status, background=background)
-
-    @app.get("/health")
-    def health():
-        """Is the receiver running?"""
-        return {"status": "ok", "time": dt.datetime.now(IST).isoformat(timespec="seconds"),
-                "secret_set": wh.secret_ready()}
-
-    @app.post("/webhook/tradingview")
-    async def tradingview(request: Request, background: BackgroundTasks):
-        """TradingView alert: {secret, strategy, symbol, action, qty or lots, price, note}."""
-        message = await body_of(request)
-        if message is None or "raw" in (message if isinstance(message, dict) else {}):
-            app.state.receiver.save_event("tradingview", message, False, "400 not JSON")
-            return JSONResponse({"status": "refused", "error": "The message must be JSON"}, status_code=400)
-        return answer(*app.state.receiver.receive("tradingview", message), background)
-
-    @app.post("/webhook/chartink")
-    async def chartink(request: Request, background: BackgroundTasks, secret: str | None = None):
-        """Chartink scan alert; the secret is in the address: /webhook/chartink?secret=..."""
-        message = await body_of(request)
-        return answer(*app.state.receiver.receive("chartink", message or {}, secret), background)
-
-    return app
+    from marketlens.api.main import create_app as create_api
+    return create_api(url=url, clock=clock, notify=notify, execute=execute)
 
 
-app = create_app()
-
-
-# python -m marketlens.webhook.server [--host 0.0.0.0] [--port 8000]
+# python -m marketlens.webhook.server: a shortcut that starts the same server as python -m marketlens.api.
 def main(argv: list[str] | None = None):
     import uvicorn
     public = config.is_set(config.SERVER_STATIC_IP)
-    parser = argparse.ArgumentParser(description="Receive TradingView / Chartink webhook alerts.")
+    parser = argparse.ArgumentParser(description="Receive TradingView / Chartink webhook alerts (and the API).")
     parser.add_argument("--host", default="0.0.0.0" if public else "127.0.0.1",
                         help="127.0.0.1 = this computer only (default); 0.0.0.0 = reachable from outside (server)")
-    parser.add_argument("--port", type=int, default=config.WEBHOOK_PORT)
+    parser.add_argument("--port", type=int, default=config.API_PORT)
     args = parser.parse_args(argv)
     if not wh.secret_ready():
         log.warning("WEBHOOK_SECRET is not set (or shorter than %s characters): every alert will be rejected.",
                     config.WEBHOOK_SECRET_MIN_LENGTH)
-    print(f"Webhook receiver on http://{args.host}:{args.port}  (health check: /health, stop: Ctrl+C)")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    print(f"MarketLens API + webhook receiver on http://{args.host}:{args.port}  "
+          "(health check: /api/health, stop: Ctrl+C)")
+    uvicorn.run("marketlens.api.main:app", host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

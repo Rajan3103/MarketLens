@@ -15,8 +15,8 @@ INDICES = {
 }
 
 
-@st.cache_data(ttl=60)  # keep the result for 60 seconds so pages load fast
-def get_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+# Download price history for one ticker (no cache; the API uses this one).
+def download_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
     """Download price history for one ticker.
 
     Returns a table with Open, High, Low, Close and Volume columns,
@@ -30,6 +30,10 @@ def get_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.Dat
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df.dropna()
+
+
+# The same download for the Streamlit pages, kept for 60 seconds so pages load fast.
+get_history = st.cache_data(ttl=60)(download_history)
 
 
 @st.cache_data(ttl=3600)

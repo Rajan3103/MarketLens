@@ -68,7 +68,7 @@ def status_cards():
     state, text = mon.heartbeat_state(beats.get(lr.RUNNER))
     card(cols[1], "Live runner", state == "alive" if state != "never" else None, text)
     hook_ok, hook_text = mon.webhook_status()
-    card(cols[2], "Webhook server", hook_ok, hook_text)
+    card(cols[2], "API & webhook server", hook_ok, hook_text)
     bot_state, bot_text = mon.heartbeat_state(beats.get("telegram_bot"))
     card(cols[3], "Telegram bot", bot_state == "alive" if bot_state != "never" else None,
          bot_text if bot_state != "never" else "Not built yet (module 12)")

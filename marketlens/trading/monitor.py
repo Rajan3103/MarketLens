@@ -39,15 +39,15 @@ def login_today(url: str | None = None, now: dt.datetime | None = None) -> dict 
         return {"status": row.status, "message": row.message, "expiry": row.token_expiry, "checked_at": row.logged_in_at}
 
 
-# Is the webhook receiver answering on this computer? (ok, text)
+# Is the API server (which also receives the webhook alerts) answering on this computer? (ok, text)
 def webhook_status(port: int | None = None, timeout: float = 1.0) -> tuple[bool, str]:
-    port = port or config.WEBHOOK_PORT
+    port = port or config.API_PORT
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=timeout) as answer:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=timeout) as answer:
             ok = json.load(answer).get("status") == "ok"
         return ok, f"Answering on port {port}" if ok else f"Port {port} answers, but not as MarketLens"
     except Exception:
-        return False, f"Not running (start: python -m marketlens.webhook.server, port {port})"
+        return False, f"Not running (start: python -m marketlens.api, port {port})"
 
 
 # A heartbeat as (state, text): state is "alive", "stale" or "never".

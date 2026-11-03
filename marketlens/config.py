@@ -90,7 +90,10 @@ TELEGRAM_CHAT_ID = get_str("TELEGRAM_CHAT_ID")
 
 # ---- Webhooks (TradingView / Chartink alerts, module 7) ----
 WEBHOOK_SECRET = get_str("WEBHOOK_SECRET")           # alerts without this text are rejected
-WEBHOOK_PORT = get_number("WEBHOOK_PORT", 8000, int, minimum=1, maximum=65535)
+WEBHOOK_PORT = get_number("WEBHOOK_PORT", 8000, int, minimum=1, maximum=65535)   # old name, still read
+
+# ---- Backend API (marketlens/api): one server for the API and the webhook receiver ----
+API_PORT = get_number("API_PORT", WEBHOOK_PORT, int, minimum=1, maximum=65535)
 WEBHOOK_SECRET_MIN_LENGTH = 24                       # shorter secrets are easy to guess
 
 # ---- App ----
