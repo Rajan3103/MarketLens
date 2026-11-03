@@ -584,6 +584,28 @@ class ServiceHeartbeat(Base):
     message: Mapped[str | None] = mapped_column(Text)
 
 
+class BackgroundJob(Base):
+    """Slow work (downloads, backtests, sweeps) running in the API's background (marketlens/api/jobs.py).
+
+    status: queued, running, done, failed or cancelled. progress: 0-100 %. result: the answer when done.
+    """
+    __tablename__ = "background_jobs"
+    id: Mapped[str] = mapped_column(primary_key=True)          # a random job id, e.g. "3f9c2a..."
+    kind: Mapped[str]                                          # what the work is, e.g. "etf_sweep"
+    status: Mapped[str] = mapped_column(server_default="queued")
+    progress: Mapped[Decimal] = mapped_column(Numeric(5, 1), server_default=text("0"))
+    message: Mapped[str | None] = mapped_column(Text)
+    params: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)
+    result: Mapped[dict | None]
+    error: Mapped[str | None] = mapped_column(Text)
+    cancel_requested: Mapped[bool] = mapped_column(server_default=text("false"))
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), index=True)
+    started_at: Mapped[dt.datetime | None]
+    finished_at: Mapped[dt.datetime | None]
+    __table_args__ = (one_of("status", ["queued", "running", "done", "failed", "cancelled"]),
+                      CheckConstraint("progress BETWEEN 0 AND 100", name="progress_0_to_100"))
+
+
 class KillSwitchEvent(Base):
     """Each time the kill switch is switched on or off. On = no new orders for the rest of that day."""
     __tablename__ = "kill_switch_events"

@@ -13,7 +13,7 @@ export const GROUPS = [
     name: "Market & data",
     modules: [
       {
-        num: 1, title: "Live Market Overview", href: "/market-overview", icon: "📊", web: "soon", streamlit: "ready",
+        num: 1, title: "Live Market Overview", href: "/market-overview", icon: "📊", web: "ready", streamlit: "ready",
         description: "Index cards, Nifty 50 gainers and losers, breadth, sector heatmap and a price chart.",
         planned: ["Nifty, Bank Nifty, Fin Nifty, Sensex and India VIX cards",
           "Nifty 50 top gainers / losers and advance-decline breadth, refreshing in market hours",

@@ -76,13 +76,18 @@ def test_market_history(client, monkeypatch):
     answer = client.get("/api/market/history", params={"symbol": "reliance.ns", "period": "6MO"})
     assert answer.status_code == 200
     body = answer.json()
-    assert asked["ticker"] == "RELIANCE.NS" and asked["period"] == "6mo"
+    assert asked["ticker"] == "RELIANCE.NS" and asked["period"] == "2y"          # extra history for the averages
     assert body["count"] == 100 and "not a live trading recommendation" in body["note"]
+    names = [t.get("name") for t in body["chart"]["data"]]
+    assert names == ["Price", "20-day MA", "50-day MA", "Buy (bullish cross)", "Sell (bearish cross)"]
+    assert len(body["chart"]["data"][3]["x"]) == 1 and body["chart"]["data"][4]["x"] == []
     first, last = body["rows"][0], body["rows"][-1]
     assert first["date"] == "2026-03-02" and first["ma20"] is None and first["ma50"] is None      # NaN -> null
     assert set(first) == {"date", "open", "high", "low", "close", "volume", "ma20", "ma50", "signal"}
     closes = [r["close"] for r in body["rows"]]
-    assert last["ma20"] == pytest.approx(sum(closes[-20:]) / 20) and last["ma50"] == pytest.approx(sum(closes[-50:]) / 50)
+    assert last["ma20"] == pytest.approx(sum(closes[-20:]) / 20, abs=0.01)
+    assert last["ma50"] == pytest.approx(sum(closes[-50:]) / 50, abs=0.01)
+    assert all(round(r["close"], 2) == r["close"] for r in body["rows"])                     # rounded to paise
     assert [s["type"] for s in body["signals"]] == ["bullish"]
     cross = next(r for r in body["rows"] if r["date"] == body["signals"][0]["date"])
     assert cross["signal"] == 1 and cross["ma20"] > cross["ma50"]
@@ -111,11 +116,35 @@ def test_unexpected_error_is_hidden(client, monkeypatch):
     assert client.get("/no/such/page").json() == {"error": "No such address. See /docs for the list."}
 
 
+# Only the chosen period is returned; the extra downloaded days only warm up the averages.
+def test_market_history_trims_to_period(client, monkeypatch):
+    monkeypatch.setattr(yfinance, "download", lambda ticker, **kw: fake_prices(300))
+    rows = client.get("/api/market/history", params={"symbol": "RELIANCE.NS", "period": "6mo"}).json()["rows"]
+    assert rows[-1]["date"] == "2027-04-23" and rows[0]["date"] >= "2026-10-23"
+    assert rows[0]["ma50"] is not None                                         # ready on the first day shown
+
+
+# The download: a CSV or an Excel file with a file name.
+def test_market_history_download(client, monkeypatch):
+    monkeypatch.setattr(yfinance, "download", lambda ticker, **kw: fake_prices())
+    csv = client.get("/api/market/history/download", params={"symbol": "RELIANCE.NS", "period": "1y"})
+    assert csv.status_code == 200 and csv.headers["content-type"].startswith("text/csv")
+    assert 'filename="RELIANCE.NS_1y_prices.csv"' in csv.headers["content-disposition"]
+    lines = csv.text.strip().splitlines()
+    assert lines[0] == "date,open,high,low,close,volume,ma20,ma50,signal" and len(lines) == 101
+    xlsx = client.get("/api/market/history/download", params={"symbol": "^NSEI", "format": "xlsx"})
+    assert xlsx.status_code == 200 and xlsx.content[:2] == b"PK"                # an .xlsx is a zip file
+    assert 'filename="NSEI_1y_prices.xlsx"' in xlsx.headers["content-disposition"]
+    bad = client.get("/api/market/history/download", params={"symbol": "X", "format": "pdf"})
+    assert bad.status_code == 400 and bad.json() == {"error": "format must be csv or xlsx"}
+
+
 # ---------------------------------------------------------------- one server: API + webhook
 
 def test_webhook_router_is_included(client):
     paths = set(client.get("/openapi.json").json()["paths"])
-    assert {"/api/health", "/api/settings/status", "/api/market/history", "/webhook/tradingview",
+    assert {"/api/health", "/api/settings/status", "/api/market/history", "/api/market/history/download",
+            "/api/jobs/{job_id}", "/api/jobs/{job_id}/cancel", "/webhook/tradingview",
             "/webhook/chartink", "/webhook/health"} <= paths
     assert client.get("/webhook/health").json()["status"] == "ok"
     assert client.get("/health").json()["status"] == "ok"                     # the old address still works

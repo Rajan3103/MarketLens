@@ -271,6 +271,7 @@ Migrations so far:
 | 0009 | Trade journal: link to the trade, source, 1-5 rating; daily whole-account holdings snapshots |
 | 0010 | Order status `WAITING_CONFIRMATION` (live orders waiting for your Confirm); `kill_switch_events` |
 | 0011 | `live_deployments` (strategies deployed on page 11) and `service_heartbeats` (background processes) |
+| 0012 | `background_jobs`: progress and results of slow work started through the API |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -509,7 +510,9 @@ Open **http://127.0.0.1:8000/docs**: every endpoint is listed there with a *Try 
 | --- | --- |
 | `GET /api/health` | `{status, version, database: ok/fail, mode: PAPER/LIVE, demo: true/false}` |
 | `GET /api/settings/status` | which keys are set (never their values), trading mode, database |
-| `GET /api/market/history?symbol=RELIANCE.NS&period=1y` | daily OHLC, volume, 20 / 50-day averages and crossover signals |
+| `GET /api/market/history?symbol=RELIANCE.NS&period=1y` | daily OHLC, volume, 20 / 50-day averages, crossover signals and the chart (Plotly JSON) |
+| `GET /api/market/history/download?symbol=...&period=1y&format=csv` | the same rows as a CSV or Excel (`format=xlsx`) file |
+| `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/cancel` | progress, message and result of a background job; cancel it |
 | `POST /webhook/tradingview`, `POST /webhook/chartink`, `GET /webhook/health` | the webhook receiver (step 10) |
 
 Errors always come back as `{"error": "<plain-English message>"}` (400 when the request is wrong, 500 when
@@ -518,12 +521,20 @@ A new group of endpoints is a new file in `marketlens/api/routes/` with a `route
 automatically. `marketlens/api/schemas.py` turns pandas tables (`df_to_records`) and Plotly charts
 (`fig_to_json`) into JSON, so a frontend can show the same tables and charts as the Streamlit pages.
 
+**Slow work** (downloads, backtests, sweeps) runs as a background job (`marketlens/api/jobs.py`): an endpoint
+calls `start_job(kind, work, params)` and answers at once with a `job_id`; the work reports
+`job.progress(percent, message)` (and stops there when you press Cancel); the page follows
+`GET /api/jobs/{job_id}` once a second. Progress and results are kept in the `background_jobs` table; a job
+still running when the API restarts is marked failed.
+
 ---
 
 ## Frontend (web app, Next.js)
 
 A second way to use MarketLens: a web app in `frontend/` (Next.js + Tailwind CSS). It is being built page
-by page; today it has the menu, the Home cards and **Settings & Status**, and every other page shows
+by page; today it has the menu, the Home cards, **Settings & Status** and **1. Live Market Overview**
+(ticker and period, candlestick chart with the 20 / 50-day averages and buy / sell crossover markers, the
+last 10 signals, CSV / Excel download; refreshes every 60 s in market hours), and every other page shows
 what it will do. The Streamlit app (`streamlit run app.py`) keeps working as before.
 
 **How the pieces talk:** your browser opens http://localhost:3000 (the web app). When a page needs data
@@ -571,9 +582,23 @@ from `/api/health`; it shows **API NOT RUNNING** when terminal 1 is not running.
 | `npm run lint` | checks the code for mistakes (ESLint) |
 | `npm run build` | a production build (checks every page can be built) |
 
-Where things are: `frontend/app/` (one folder per page), `frontend/components/` (menu + top bar,
-ComingSoon, Settings), `frontend/lib/modules.js` (the menu and Home cards), `frontend/lib/api.js`
-(`apiGet` / `apiPost`), `frontend/next.config.mjs` (forwards `/api` and `/webhook` to the backend).
+Where things are: `frontend/app/` (one folder per page), `frontend/lib/modules.js` (the menu and Home cards),
+`frontend/lib/api.js` (`apiGet` / `apiPost`), `frontend/next.config.mjs` (forwards `/api` and `/webhook` to the
+backend), and the building blocks every page uses, so they all look and behave the same:
+
+| `frontend/components/` | What it is |
+| --- | --- |
+| `MetricCard` | a label, a value and a change in green / red |
+| `DataTable` | sorting, pages, numbers in Rs and % (Indian grouping), optional row buttons |
+| `PlotlyChart` | draws a chart the Python code made (figure JSON from the API); Plotly loads only on pages with a chart |
+| `Tabs` | the open tab is kept in the address (`?tab=chain`), so reloads and shared links open it |
+| `FormField` | a label with its unit above an input |
+| `ProgressBar` | a plain bar, or `jobId=...` to follow a background job every second (with Cancel) |
+| `DownloadButton` | saves a CSV / Excel file made by an API endpoint |
+| `DemoBanner`, `HistoricalNote`, `HelpNote`, `Loading`, `ErrorBox` | the DEMO warning, the fixed learning note, a "what does this mean?" box, waiting and problem messages |
+
+`frontend/lib/usePolling.js` repeats a request every N seconds only while the page is open and visible
+(60 s market refresh, 10 s live monitor); `frontend/lib/format.js` formats Rs, %, numbers and dates.
 
 ---
 
@@ -623,7 +648,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **790 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **800 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -678,7 +703,7 @@ MarketLens/
 │   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
 │   └── scheduler/          # for the upcoming modules
-├── migrations/             # Alembic migrations 0001 .. 0011
+├── migrations/             # Alembic migrations 0001 .. 0012
 ├── frontend/               # web app (Next.js): app/ pages, components/, lib/ (see Frontend above)
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)

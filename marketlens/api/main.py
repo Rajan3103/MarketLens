@@ -13,6 +13,7 @@ error_log, never to the browser.
 import importlib
 import pkgutil
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -51,7 +52,18 @@ def _input_problems(err: RequestValidationError) -> str:
 # Build the app. url / clock / notify / execute go to the webhook receiver (tests pass their own).
 def create_app(url: str | None = None, clock=time.monotonic, notify=None, execute=None) -> FastAPI:
     from marketlens.webhook.server import Receiver, health_info
-    app = FastAPI(title="MarketLens API", version=marketlens.__version__,
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """When the server starts: jobs left running by the last server are marked failed."""
+        try:
+            from marketlens.api.jobs import fail_orphans
+            fail_orphans(url)
+        except Exception as err:                     # e.g. the database is not running yet
+            log.warning("Could not check unfinished jobs: %s", err)
+        yield
+
+    app = FastAPI(title="MarketLens API", version=marketlens.__version__, lifespan=lifespan,
                   description="Market data, strategies and trading for the MarketLens frontend; also receives "
                               "TradingView / Chartink webhook alerts under /webhook.")
     app.state.url = url
