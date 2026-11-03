@@ -206,7 +206,9 @@ def test_paper_signal_is_sent_and_saved(make, db_url):
     assert signal["side"] == "BUY" and signal["reason"] == "EMA cross" and signal["params"]["mode"] == "paper"
     order = rows(db_url, Order)[0]
     assert order["signal_id"] == signal["id"] and order["status"] == "FILLED" and order["mode"] == "paper"
-    assert "PAPER signal" in rows(db_url, Notification)[0]["message"]
+    note = rows(db_url, Notification)[0]
+    assert "PAPER order filled: signal" in note["message"] and note["event"] == "order_filled"
+    assert note["source"] == "order_service" and note["status"] == "sent"          # the test's notify said yes
     assert s.limiter.calls == 1
 
 

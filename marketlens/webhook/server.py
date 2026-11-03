@@ -47,10 +47,10 @@ class Receiver:
     """Everything the endpoints do, kept outside FastAPI so it is easy to test."""
 
     def __init__(self, url: str | None = None, clock=time.monotonic, notify=None, execute=None):
-        from marketlens.alerts.telegram import send_message
+        from marketlens.alerts.telegram import notify as telegram_notify
         from marketlens.trading.orders import execute_signal
         self.url, self.clock = url, clock
-        self.notify = notify or send_message
+        self.notify = notify or (lambda text: telegram_notify(text, source="webhook", event="webhook_alert", url=url))
         self.execute = execute or execute_signal
         self.recent: dict[tuple, float] = {}
 

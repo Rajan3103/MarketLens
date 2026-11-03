@@ -43,7 +43,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
 | | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page, in Streamlit and the **web app** (`/live-trading`: deploy, Start / Pause / Stop, status cards, orders, positions, Confirm / Reject, loss limits, kill switch, error log) | ✅ |
-| | 12 | Telegram Bot Control Panel | | 📋 |
+| | 12 | Telegram Bot Control Panel | Every message saved in `notifications` (sent / failed / skipped) from orders, SL hits, kill switch, webhooks, forward tests, the live runner and errors; price alerts (price, % change, indicator rule, OI / PCR); bot commands next | 🛠️ |
 
 ### Highlights of the ready modules
 
@@ -291,6 +291,7 @@ Migrations so far:
 | 0011 | `live_deployments` (strategies deployed on page 11) and `service_heartbeats` (background processes) |
 | 0012 | `background_jobs`: progress and results of slow work started through the API |
 | 0013 | `portfolio_holdings` also keeps the holdings after every rebalance of a saved backtest run (`run_id`, `rebalance_date`, price, value) |
+| 0014 | `notifications`: status `skipped`, `source`, `event`; `price_alerts`: % change, indicator, OI and PCR alerts, `params`, last value |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -689,7 +690,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **847 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **877 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -740,7 +741,7 @@ MarketLens/
 │   ├── api/                # backend API (FastAPI): main.py (create_app, errors, /api/health), schemas.py
 │   │                       # (answer shapes, df_to_records, fig_to_json), routes/ (settings, market, webhook)
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (webhook router)
-│   ├── alerts/             # telegram.py (send a Telegram message)
+│   ├── alerts/             # telegram.py (send + save every message), price_alerts.py (price / indicator / OI alerts)
 │   ├── momentum/           # ranking.py (scores, filters), portfolio.py (cash, lots, costs, tax, shared),
 │   │                       # portfolio_bt.py (stock momentum backtest, module 8), etf_bt.py (ETF rotation, module 9)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
@@ -797,10 +798,26 @@ default, DEMO data without keys, tests for every calculation).
 - Dhan only accepts orders from a whitelisted static IP, so live trading will run on the server.
 
 ### 12. Telegram Bot Control Panel
-- Alerts on Telegram: entries, exits, stop losses, daily P&L, errors.
-- Commands: status, positions, P&L, stop a strategy, exit all; answering the Confirm / Reject buttons
-  (today: `python -m marketlens.trading.order_service confirm <signal>`).
-- Price alerts ("tell me when NIFTY goes above 25,500").
+- ✅ Done: every message is sent through `marketlens/alerts/telegram.py` and saved in `notifications` with
+  its status (**sent**, **failed** with the reason, or **skipped** when the Telegram keys are not set), its
+  source and its event. Sources: the order service (signal waiting, order placed / filled / rejected /
+  cancelled, **SL hit**, kill switch), webhook alerts, forward-test paper orders, the live runner (strategy
+  stopped / paused), every ERROR in the error log (the same error at most once in 30 minutes) and the
+  08:45 login reminder.
+- ✅ Done: price alerts (`marketlens/alerts/price_alerts.py`): price above / below, % change today, an
+  indicator rule (the same rules as the Signals builder, on daily candles), and OI or PCR of the nearest
+  NIFTY / BANKNIFTY / FINNIFTY / SENSEX expiry (needs Dhan; never triggered on DEMO data). A triggered alert
+  is told on Telegram and switched off.
+
+  ```bash
+  python -c "from marketlens.alerts.price_alerts import add_alert; print(add_alert('NIFTY', 'ABOVE', 25500))"
+  python -m marketlens.alerts.price_alerts list
+  python -m marketlens.alerts.price_alerts check            # once
+  python -m marketlens.alerts.price_alerts watch --every 60 # in market hours, with a heartbeat
+  python -m marketlens.alerts.price_alerts delete 3
+  ```
+- Next: bot commands (status, positions, P&L, stop a strategy, exit all) and answering the Confirm / Reject
+  buttons (today: `python -m marketlens.trading.order_service confirm <signal>`); a page for alerts.
 
 ### Platform
 - **Web frontend** (`frontend/`, started): each module page in turn, with the API endpoints it needs (option chain, backtests, strategies, orders).

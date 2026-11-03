@@ -30,6 +30,21 @@ def no_internet_prices(monkeypatch):
     monkeypatch.setattr(yfinance, "download", blocked)
 
 
+# Tests never reach Telegram: the keys are blanked (messages are "skipped") and a real POST fails at once.
+# Tests that need a "sent" message set the keys and replace telegram._post themselves.
+@pytest.fixture(autouse=True)
+def no_telegram(monkeypatch):
+    from marketlens import logger
+    from marketlens.alerts import telegram
+
+    def blocked(*args, **kwargs):
+        raise ConnectionError("Tests must not send real Telegram messages (replace telegram._post).")
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(config, "TELEGRAM_CHAT_ID", "")
+    monkeypatch.setattr(telegram, "_post", blocked)
+    monkeypatch.setattr(logger, "_last_alert", {})
+
+
 # Connect to TEST_DATABASE_URL and build the tables with Alembic, or skip with a reason.
 @pytest.fixture(scope="session")
 def db_url():

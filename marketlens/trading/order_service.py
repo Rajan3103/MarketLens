@@ -333,14 +333,14 @@ class OrderService:
             message = f"Signal {signal_id} could not be checked: {_clean(err)}"
             record_error(__name__, message, {"signal_id": signal_id, "strategy": name}, url=self.url)
             self.save_orders(legs, mode, sid, signal_id, "REJECTED", message)
-            self.tell(f"⚠️ {message}")
+            self.tell(f"⚠️ {message}", event="error")
             return SignalResult(signal_id, "ERROR", message=message)
         if problems:
             return self.block(legs, problems, mode, sid, signal_id, name)
         if mode == "live" and (confirm or not config.AUTO_TRADE):
             return self.ask_confirmation(legs, sid, signal_id, name, reason)
         results = self.send(legs, broker, mode, sid, signal_id)
-        return self.finish(signal_id, name, legs, results, mode)
+        return self.finish(signal_id, name, legs, results, mode, reason)
 
     # ------------------------------------------------------------ inputs
 
@@ -441,7 +441,8 @@ class OrderService:
         reasons = "; ".join(problems)
         self.save_orders(legs, mode, sid, signal_id, "REJECTED", reasons)
         log.warning("Signal %s (%s) blocked: %s", signal_id, name, reasons)
-        self.tell(f"🚫 Signal {signal_id} ({name}) blocked, nothing was sent:\n- " + "\n- ".join(problems))
+        self.tell(f"🚫 Signal {signal_id} ({name}) blocked, nothing was sent:\n- " + "\n- ".join(problems),
+                  event="order_rejected")
         return SignalResult(signal_id, "BLOCKED", problems=problems, message=reasons)
 
     # Live with AUTO_TRADE=false: save the orders as waiting and ask on Telegram.
@@ -452,7 +453,8 @@ class OrderService:
         text = (f"🔔 LIVE order needs your OK. Signal {signal_id} ({name}): {reason or 'no reason given'}\n{lines}\n"
                 f"Tap Confirm within {config.CONFIRM_TIMEOUT_MIN} minutes, or run:\n"
                 f"python -m marketlens.trading.order_service confirm {signal_id}")
-        self.tell(text, buttons=[("✅ Confirm", f"confirm:{signal_id}"), ("❌ Reject", f"reject:{signal_id}")])
+        self.tell(text, buttons=[("✅ Confirm", f"confirm:{signal_id}"), ("❌ Reject", f"reject:{signal_id}")],
+                  event="signal")
         log.info("Signal %s waiting for confirmation (%s legs)", signal_id, len(legs))
         return SignalResult(signal_id, WAITING, message="Waiting for your confirmation on Telegram")
 
@@ -479,13 +481,17 @@ class OrderService:
         return results
 
     # Tell you how the sent signal went; returns its SignalResult.
-    def finish(self, signal_id: int, name: str, legs: list[Leg], results: list[OrderResult], mode: str) -> SignalResult:
+    def finish(self, signal_id: int, name: str, legs: list[Leg], results: list[OrderResult], mode: str,
+               reason: str = "") -> SignalResult:
         bad = [r for r in results if r.status == "REJECTED"]
         lines = "\n".join(f"- {l.side} {l.qty} {l.symbol}: {r.status}"
                           + (f" @ {r.avg_price:,.2f}" if r.avg_price else "") + (f" ({r.message})" if r.message else "")
                           for l, r in zip(legs, results))
-        icon = "⚠️" if bad else "✅"
-        self.tell(f"{icon} {mode.upper()} signal {signal_id} ({name}) sent:\n{lines}")
+        event = order_event(results, reason)
+        heading = {"sl_hit": f"🛑 SL hit, {mode.upper()} exit", "order_rejected": f"⚠️ {mode.upper()} order rejected",
+                   "order_filled": f"✅ {mode.upper()} order filled"}.get(event, f"📤 {mode.upper()} order placed")
+        icon_line = f"{heading}: signal {signal_id} ({name})" + (f" - {reason}" if reason else "")
+        self.tell(f"{icon_line}\n{lines}", event=event)
         if bad and len(bad) < len(results):
             record_error(__name__, f"Signal {signal_id}: only some legs were accepted; check your positions",
                          {"signal_id": signal_id}, url=self.url, level="WARNING")
@@ -516,11 +522,12 @@ class OrderService:
             return self.cancel_waiting(signal_id, f"Could not check the risk rules: {_clean(err)}", error=True)
         if problems:
             self.update_orders(legs, "REJECTED", "; ".join(problems))
-            self.tell(f"🚫 Signal {signal_id} confirmed but blocked now:\n- " + "\n- ".join(problems))
+            self.tell(f"🚫 Signal {signal_id} confirmed but blocked now:\n- " + "\n- ".join(problems),
+                      event="order_rejected")
             return SignalResult(signal_id, "BLOCKED", problems=problems, message="; ".join(problems))
         log.info("Signal %s confirmed by you: sending %s legs", signal_id, len(legs))
         results = self.send(legs, broker, "live", sid, signal_id)
-        return self.finish(signal_id, name, legs, results, "live")
+        return self.finish(signal_id, name, legs, results, "live", self._signal_reason(signal_id))
 
     # Your Reject: cancel the waiting orders.
     def reject_signal(self, signal_id: int) -> SignalResult:
@@ -535,7 +542,7 @@ class OrderService:
         if error:
             record_error(__name__, f"Signal {signal_id}: {reason}", {"signal_id": signal_id}, url=self.url)
         log.info("Signal %s cancelled: %s", signal_id, reason)
-        self.tell(f"❌ Signal {signal_id} cancelled: {reason}")
+        self.tell(f"❌ Signal {signal_id} cancelled: {reason}", event="order_cancelled")
         return SignalResult(signal_id, "CANCELLED", message=reason)
 
     # The orders of a signal still waiting for your confirmation (oldest first).
@@ -576,7 +583,8 @@ class OrderService:
         record_error(__name__, f"Kill switch ON ({mode}): {reason}", {"square_off": square_off}, url=self.url,
                      level="WARNING")
         self.tell(f"🛑 KILL SWITCH ON ({mode}): {reason}. No new orders today."
-                  + (f"\nSquare-off: {closed}" if square_off else "\nOpen positions were NOT closed."))
+                  + (f"\nSquare-off: {closed}" if square_off else "\nOpen positions were NOT closed."),
+                  event="kill_switch")
         return closed
 
     # Switch the kill switch off again (new orders are allowed).
@@ -584,7 +592,7 @@ class OrderService:
         mode = mode or config.TRADING_MODE
         save_kill_switch(False, reason, mode, self.now(), url=self.url)
         log.warning("Kill switch OFF (%s): %s", mode, reason)
-        self.tell(f"🟢 Kill switch OFF ({mode}): {reason}")
+        self.tell(f"🟢 Kill switch OFF ({mode}): {reason}", event="kill_switch")
 
     # Close every open position (live: Dhan's exit-all; paper: a market order against each position).
     def square_off_all(self, mode: str) -> str:
@@ -695,24 +703,28 @@ class OrderService:
             session.commit()
             leg.order_row = row.id
 
-    # Send a message (Telegram) and keep a copy in the notifications table. Never raises.
-    def tell(self, text: str, buttons: list[tuple[str, str]] | None = None) -> bool:
-        try:
-            ok = bool(self.notify(text, buttons=buttons))
-        except Exception as err:
-            ok = False
-            log.warning("Notification failed: %s", _clean(err))
+    # The reason saved with a signal ("" when there is none).
+    def _signal_reason(self, signal_id: int) -> str:
         try:
             from marketlens.db import get_session
-            from marketlens.models import Notification
+            from marketlens.models import Signal
             with get_session(self.url) as session:
-                session.add(Notification(channel="telegram", message=text, status="sent" if ok else "failed",
-                                         error=None if ok else "Not sent (Telegram key not set or Telegram error)",
-                                         sent_at=self.now() if ok else None))
-                session.commit()
+                row = session.get(Signal, signal_id)
+                return (row.reason or "") if row else ""
+        except Exception:
+            return ""
+
+    # Send a message (Telegram) and keep a copy in the notifications table (sent / failed / skipped).
+    # event: signal, order_placed, order_filled, order_rejected, order_cancelled, sl_hit, kill_switch, error.
+    def tell(self, text: str, buttons: list[tuple[str, str]] | None = None, event: str | None = None) -> bool:
+        from marketlens.alerts.telegram import save_notification
+        try:
+            status, error = _status_of(self.notify(text, buttons=buttons))
         except Exception as err:
-            log.warning("Could not save the notification: %s", err)
-        return ok
+            status, error = "failed", f"Notification failed: {_clean(err)}"
+            log.warning(error)
+        save_notification(text, status, error, "order_service", event, self.url)
+        return status == "sent"
 
 
 # ====================================================================== helpers
@@ -732,10 +744,31 @@ def _clean(err) -> str:
     return scrub(err)
 
 
-# The real Telegram sender (tests pass their own notify).
-def _telegram(text: str, buttons=None) -> bool:
-    from marketlens.alerts.telegram import send_message
-    return send_message(text, buttons=buttons)
+# The real Telegram sender (tests pass their own notify): ("sent" / "failed" / "skipped", error).
+def _telegram(text: str, buttons=None) -> tuple[str, str | None]:
+    from marketlens.alerts.telegram import deliver
+    return deliver(text, buttons)
+
+
+# What a notify function answered, as (status, error): a (status, error) pair, or True / False.
+def _status_of(answer) -> tuple[str, str | None]:
+    if isinstance(answer, tuple):
+        return answer[0], answer[1] if len(answer) > 1 else None
+    return ("sent", None) if answer else ("failed", "Not sent (Telegram refused it or could not be reached)")
+
+
+SL_WORD = re.compile(r"(?<![A-Z])SL(?![A-Z])|stop.?loss", re.IGNORECASE)
+
+
+# The notification event of a sent signal: sl_hit, order_rejected, order_filled or order_placed.
+def order_event(results: list[OrderResult], reason: str = "") -> str:
+    if results and all(r.status == "REJECTED" for r in results):
+        return "order_rejected"
+    if SL_WORD.search(reason or ""):
+        return "sl_hit"
+    if results and all(r.status == "FILLED" for r in results):
+        return "order_filled"
+    return "order_placed"
 
 
 # Today's Dhan login status, asked again at most every 5 minutes.

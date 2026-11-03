@@ -40,7 +40,7 @@ from marketlens.backtest import options_bt as ob
 from marketlens.broker.candles import IST
 from marketlens.broker.paper import PaperBroker
 from marketlens.costs import CostSettings, to_paise
-from marketlens.logger import get_logger
+from marketlens.logger import get_logger, record_error
 from marketlens.signals.indicators import ema, rsi
 
 log = get_logger(__name__)
@@ -374,6 +374,8 @@ class ForwardRunner:
                 state, message, live = self._indicator_cycle(now, params)
         except Exception as err:                       # keep running: next minute may work (e.g. network)
             log.exception("Forward test cycle failed")
+            record_error(__name__, f"Forward test '{self.name}' failed: {type(err).__name__}: {err}",
+                         {"strategy_id": self.strategy_id}, url=self.url)
             self._save_row(run_id, state="error", message=f"{type(err).__name__}: {err}")
             return {"stop": False, "state": "error", "error": str(err)}
         params.update(live)
@@ -401,8 +403,24 @@ class ForwardRunner:
 
     # Send one order. The forward test uses the paper broker directly; the live runner
     # (live_runner.py) replaces this to go through the order service's risk checks.
-    def _send(self, symbol: str, side: str, qty: int, product: str = "INTRADAY", tag: str | None = None):
-        return self.broker.place_order(symbol, side, qty, product=product, tag=tag)
+    # reason: why (e.g. "SL", "TARGET"); an SL exit is told as "SL hit".
+    def _send(self, symbol: str, side: str, qty: int, product: str = "INTRADAY", tag: str | None = None,
+              reason: str | None = None):
+        result = self.broker.place_order(symbol, side, qty, product=product, tag=tag)
+        self._tell_order(symbol, side, qty, result, reason or (tag or "").removeprefix("forward:"))
+        return result
+
+    # Tell (Telegram, saved in notifications) about one forward-test paper order.
+    def _tell_order(self, symbol: str, side: str, qty: int, result, reason: str):
+        from marketlens.alerts.telegram import notify
+        from marketlens.trading.order_service import order_event
+        event = order_event([result], reason)
+        icon = {"sl_hit": "🛑 SL hit", "order_rejected": "⚠️ Rejected", "order_filled": "📝 Filled"}.get(event, "📝 Placed")
+        price = f" @ {result.avg_price:,.2f}" if getattr(result, "avg_price", None) else ""
+        why = f" - {reason}" if reason and "|" not in reason else ""
+        notify(f"{icon} (forward test, paper) {self.name}: {side} {qty} {symbol}{price}{why}"
+               + (f" ({result.message})" if result.status == "REJECTED" and result.message else ""),
+               source="forward_test", event=event, url=self.url)
 
     # Did the entry with this key really go through (so its exit may be sent)?
     def _entry_ok(self, done: dict, entry_key: str) -> bool:
@@ -457,7 +475,8 @@ class ForwardRunner:
             if price is None:
                 continue                                # no live price yet: try again next minute
             self.broker.update_price(event["symbol"], price)
-            result = self._send(event["symbol"], event["side"], event["qty"], tag=f"forward:{key}")
+            result = self._send(event["symbol"], event["side"], event["qty"], tag=f"forward:{key}",
+                                reason=event["reason"])
             done[key] = result.status
             fills[key] = {"fill": result.avg_price, "engine": event["engine_price"], "status": result.status,
                           "message": result.message}

@@ -302,10 +302,12 @@ class LiveRunner(fw.ForwardRunner):
     # ---- orders through the order service ----
 
     # Send one order as a signal: risk checks, kill switch, confirmation (live) all apply.
-    def _send(self, symbol: str, side: str, qty: int, product: str = "INTRADAY", tag: str | None = None):
+    def _send(self, symbol: str, side: str, qty: int, product: str = "INTRADAY", tag: str | None = None,
+              reason: str | None = None):
         price = self.broker.last.get(symbol)
+        text = f"{tag} ({reason})" if tag and reason else (tag or reason or "")
         r = self.service.submit_signal(self.strategy_id, side, symbol, int(qty), price=price, product=product,
-                                       reason=tag or "", source="live", confirm=self.confirm)
+                                       reason=text, source="live", confirm=self.confirm)
         if tag:
             self.signal_of[tag] = r.signal_id
         if r.status == "SENT":
@@ -459,6 +461,8 @@ def run_once(runners: dict, url: str | None = None, clock=None, make_runner=None
             set_status(sid, "paused" if dep.status != "stopping" else "stopped", url)
             _note(sid, f"Deployed for {dep.mode.upper()}, but TRADING_MODE is {mode}: deploy it again for "
                        f"{mode.upper()}.", url)
+            _tell(f"⏸ {dep.name} paused: deployed for {dep.mode.upper()}, but TRADING_MODE is {mode}.",
+                  "strategy_paused", url)
             runners.pop(sid, None)
             lines.append(f"{dep.name}: mode changed, paused")
             continue
@@ -467,6 +471,7 @@ def run_once(runners: dict, url: str | None = None, clock=None, make_runner=None
                 if mode == "live" and dep.status == "running" and not deploy_check(sid, url)["ok_live"]:
                     set_status(sid, "paused", url)
                     _note(sid, "Paused: not ready for live trading (see Deploy).", url)
+                    _tell(f"⏸ {dep.name} paused: not ready for live trading.", "strategy_paused", url)
                     continue
                 runners[sid] = make_runner(sid)
             result = runners[sid].cycle()
@@ -477,11 +482,18 @@ def run_once(runners: dict, url: str | None = None, clock=None, make_runner=None
         if result.get("stop"):
             runners.pop(sid, None)
             set_status(sid, "stopped", url)
+            _tell(f"⏹ {dep.name} stopped ({mode.upper()}): {result.get('message', '')}", "strategy_stopped", url)
         lines.append(f"{dep.name}: {result.get('state')} - {result.get('message', result.get('error', ''))}")
     for sid in set(runners) - set(active["strategy_id"]):        # stopped or removed on the page
         runners.pop(sid)
     beat(RUNNER, f"{mode} mode, {len(active)} active deployment(s)", url, now=dt.datetime.now(IST))
     return lines
+
+
+# Tell (Telegram, saved in notifications) something the runner did.
+def _tell(text: str, event: str, url: str | None = None):
+    from marketlens.alerts.telegram import notify
+    notify(text, source="live_runner", event=event, url=url)
 
 
 # Write a message on a deployment row.

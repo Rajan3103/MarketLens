@@ -473,17 +473,27 @@ class Position(Base):
 # =====================================================================
 
 class PriceAlert(Base):
-    """'Tell me on Telegram when NIFTY goes above 25,500.'"""
+    """'Tell me on Telegram when NIFTY goes above 25,500' (marketlens/alerts/price_alerts.py).
+
+    condition: ABOVE / BELOW (price), CHANGE_ABOVE / CHANGE_BELOW (% change today), INDICATOR (a rule from
+    signals/rules.py in params), OI_ABOVE / OI_BELOW and PCR_ABOVE / PCR_BELOW (an index's option chain)."""
     __tablename__ = "price_alerts"
     id: Mapped[int] = mapped_column(primary_key=True)
-    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id", ondelete="CASCADE"))
-    condition: Mapped[str]                    # ABOVE or BELOW
-    target_price: Mapped[Decimal]
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id", ondelete="CASCADE"))
+    symbol: Mapped[str]                       # RELIANCE, NIFTY, ^NSEI ...
+    condition: Mapped[str]
+    target_price: Mapped[Decimal | None]      # the level (price, %, OI or PCR); empty for INDICATOR
+    params: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)   # indicator rule, OI side, expiry
     is_active: Mapped[bool] = mapped_column(server_default=text("true"))
     note: Mapped[str | None]
     created_at: Mapped[dt.datetime] = created_now()
+    last_checked_at: Mapped[dt.datetime | None]
+    last_value: Mapped[Decimal | None]        # what the last check saw
     triggered_at: Mapped[dt.datetime | None]
-    __table_args__ = (one_of("condition", ["ABOVE", "BELOW"]),)
+    trigger_message: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (one_of("condition", ["ABOVE", "BELOW", "CHANGE_ABOVE", "CHANGE_BELOW", "INDICATOR",
+                                           "OI_ABOVE", "OI_BELOW", "PCR_ABOVE", "PCR_BELOW"]),
+                      Index("ix_price_alerts_active", "is_active"))
 
 
 class Notification(Base):
@@ -492,14 +502,16 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel: Mapped[str] = mapped_column(server_default="telegram")
     message: Mapped[str] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(server_default="pending")
+    status: Mapped[str] = mapped_column(server_default="pending")   # sent, failed, skipped (keys not set), pending
     error: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None]                # order_service, webhook, forward_test, live_runner, error_log, price_alert, login
+    event: Mapped[str | None]                 # signal, order_placed, order_filled, order_rejected, sl_hit, kill_switch, ...
     created_at: Mapped[dt.datetime] = created_now()
     sent_at: Mapped[dt.datetime | None]
     __table_args__ = (
         Index("ix_notifications_status_created", "status", "created_at"),
         one_of("channel", ["telegram", "app"]),
-        one_of("status", ["pending", "sent", "failed"]),
+        one_of("status", ["pending", "sent", "failed", "skipped"]),
     )
 
 

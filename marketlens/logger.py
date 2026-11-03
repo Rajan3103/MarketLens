@@ -67,3 +67,24 @@ def record_error(module: str, message: str, details: dict | None = None, url: st
             session.commit()
     except Exception as err:                     # no database: the log file still has the error
         logger.warning("Could not save the error in error_log: %s", err)
+    if level == "ERROR" and alert_due(module, message):
+        try:
+            from marketlens.alerts.telegram import notify
+            notify(f"❗ Error in {module}: {message}"[:1000], source="error_log", event="error", url=url)
+        except Exception as err:                 # never let an alert hide the real error
+            logger.warning("Could not send the error alert: %s", err)
+
+
+ALERT_EVERY_SECONDS = 1800                       # the same error is told at most once in 30 minutes
+_last_alert: dict = {}
+
+
+# True when this error was not told in the last ALERT_EVERY_SECONDS (and remember it now).
+def alert_due(module: str, message: str, now: float | None = None) -> bool:
+    import time
+    now = time.monotonic() if now is None else now
+    key = (module, message[:120])
+    if now - _last_alert.get(key, -ALERT_EVERY_SECONDS) < ALERT_EVERY_SECONDS:
+        return False
+    _last_alert[key] = now
+    return True

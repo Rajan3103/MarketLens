@@ -342,8 +342,10 @@ def remind_if_needed(now: dt.datetime | None = None, send=None, url: str | None 
                              result.expiry, result.checked_at)
     text = reminder_text(result)
     if send is None:
-        from marketlens.alerts.telegram import send_message as send
-    send(text)
+        from marketlens.alerts.telegram import notify
+        notify(text, source="login", event="login_reminder", url=url)
+    else:
+        send(text)
     return text
 
 
