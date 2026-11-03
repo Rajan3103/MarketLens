@@ -1,9 +1,17 @@
-// Not built in the web app yet: shows what it will do (see lib/modules.js).
-import ComingSoon from "@/components/ComingSoon";
-import { moduleFor } from "@/lib/modules";
+// Module 8: Momentum Engine Backtest vs Nifty (the page itself is in MomentumEngine.jsx).
+// It reads ?strategy= from the address, so it sits inside <Suspense>.
+import { Suspense } from "react";
 
-export const metadata = { title: moduleFor("/momentum-engine").title };
+import Loading from "@/components/Loading";
+
+import MomentumEngine from "./MomentumEngine";
+
+export const metadata = { title: "Momentum Engine Backtest vs Nifty" };
 
 export default function MomentumEnginePage() {
-  return <ComingSoon href="/momentum-engine" />;
+  return (
+    <Suspense fallback={<Loading />}>
+      <MomentumEngine />
+    </Suspense>
+  );
 }

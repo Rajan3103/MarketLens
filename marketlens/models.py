@@ -332,16 +332,26 @@ class SimulatorTrade(Base):
 # =====================================================================
 
 class PortfolioHolding(Base):
-    """What a momentum or ETF strategy holds right now."""
+    """What a momentum or ETF strategy holds: right now (run_id empty, one row per stock), or after each
+    rebalance of a saved backtest run (run_id + rebalance_date, module 8)."""
     __tablename__ = "portfolio_holdings"
     id: Mapped[int] = mapped_column(primary_key=True)
-    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"))
+    strategy_id: Mapped[int | None] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"))
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("backtest_runs.id", ondelete="CASCADE"))
+    rebalance_date: Mapped[dt.date | None]
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
     qty: Mapped[Decimal]
     avg_price: Mapped[Decimal]
+    price: Mapped[Decimal | None]                       # price that day (for a backtest rebalance)
+    value: Mapped[Decimal | None] = mapped_column(Money)
     weight: Mapped[Decimal | None] = mapped_column(Pct)
     updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
-    __table_args__ = (UniqueConstraint("strategy_id", "instrument_id"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "rebalance_date", "instrument_id"),
+        # today's holdings: one row per strategy and stock
+        Index("uq_portfolio_holdings_live", "strategy_id", "instrument_id", unique=True,
+              postgresql_where=text("run_id IS NULL")),
+    )
 
 
 class HoldingsSnapshot(Base):

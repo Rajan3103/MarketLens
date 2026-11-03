@@ -1,13 +1,29 @@
-"""Module 8 - Momentum Engine Backtest vs Nifty (planned). Requirements FR-13 to FR-15."""
+"""Module 8 - Momentum Engine Backtest vs Nifty. Requirements FR-13 to FR-15.
+
+The page itself is in the web app (frontend/app/momentum-engine): backtest form with progress, current
+ranks and rebalance history. This Streamlit page links there, and opens a strategy sent from the Strategy
+Library (module 10) on the web page. The engine is marketlens/momentum/portfolio_bt.py.
+"""
 import streamlit as st
 
-from marketlens.ui import coming_soon, historical_note
+from marketlens import config
+from marketlens.ui import historical_note
 
 st.title("🚀 Momentum Engine Backtest vs Nifty")
-coming_soon("Momentum Engine", [
-    "Rank Nifty 200 stocks by 3, 6 and 12 month returns",
-    "Top-N portfolio rebalanced monthly or weekly",
-    "Equity curve against Nifty 50 buy-and-hold",
-    "CAGR, max drawdown and Sharpe ratio after costs",
-])
+address = f"{config.FRONTEND_URL}/momentum-engine"
+
+opened = st.session_state.get("handoff") or {}
+if opened.get("to") == "momentum":
+    st.session_state.pop("handoff")
+    link = f"{address}?strategy={opened['strategy_id']}"
+    st.success(f"Strategy **{opened['name']}** (id {opened['strategy_id']}) is ready to open in the web app.")
+    st.link_button("🚀 Open it in the Momentum Engine", link, type="primary")
+    st.caption(f"Address: {link}")
+
+st.markdown(
+    "This module runs in the **web app**: rank Nifty 50 / Nifty 200 stocks by 3, 6 and 12-month momentum, hold "
+    "the top N (keeping a stock while it stays in the top M), rebalance monthly or weekly with equal or "
+    "inverse-volatility weights, and compare the result after costs and tax with Nifty 50 buy-and-hold.")
+st.link_button("Open the Momentum Engine", address)
+st.caption("Start it with two terminals: `python -m marketlens.api` and, in frontend/, `npm run dev`.")
 historical_note()

@@ -94,6 +94,7 @@ WEBHOOK_PORT = get_number("WEBHOOK_PORT", 8000, int, minimum=1, maximum=65535)  
 
 # ---- Backend API (marketlens/api): one server for the API and the webhook receiver ----
 API_PORT = get_number("API_PORT", WEBHOOK_PORT, int, minimum=1, maximum=65535)
+FRONTEND_URL = get_str("FRONTEND_URL", "http://localhost:3000").rstrip("/")   # the Next.js web app (npm run dev)
 WEBHOOK_SECRET_MIN_LENGTH = 24                       # shorter secrets are easy to guess
 
 # ---- App ----

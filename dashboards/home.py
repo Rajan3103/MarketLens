@@ -18,7 +18,7 @@ Welcome! Pick a dashboard from the menu on the left.
 | | 5 | Option Simulator | Replay a stored day minute by minute (play, pause, step, 1x-30x, jump, slider); chain with LTP/IV/delta/OI as it was then; virtual orders with SL/target, exit all, costs; P&L curve, payoff, summary; saved sessions | ✅ (on stored data) |
 | | 6 | Forward Test / Paper Trading | Run a saved options (backtester rules) or indicator strategy every minute on live Dhan / DEMO prices through the paper broker, as a background process; status, open legs, trades with exit reasons; history vs backtest | ✅ (paper only) |
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Condition builder (AND/OR) on SMA, EMA, RSI, MACD, Bollinger, Supertrend, VWAP, ATR; backtest with chart markers; scanner on Nifty 50/200, ETFs or a watchlist; Pine Script v6 export with webhook alerts; FastAPI webhook receiver (saves alerts, Telegram, paper orders for auto strategies) | ✅ |
-| | 8 | Momentum Engine Backtest | Momentum stock portfolio against Nifty 50 | 📋 |
+| | 8 | Momentum Engine Backtest | Top-N Nifty 50 / 200 momentum portfolio vs Nifty 50 after costs and tax (web app) | ✅ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation after costs and tax vs Nifty 50; check a claim; parameter sweep | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library, holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
 | | 11 | Live Algo Trading & Bot Monitor | Deploy strategies (live needs a backtest + 10 forward-test days), live runner, risk checks, kill switch, Telegram confirm, bot monitor with status cards, loss limits and error log (paper by default) | 🛠️ |

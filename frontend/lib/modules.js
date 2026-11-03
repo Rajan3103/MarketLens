@@ -70,8 +70,8 @@ export const GROUPS = [
           "TradingView Pine Script v6 export and webhook alerts"],
       },
       {
-        num: 8, title: "Momentum Engine Backtest", href: "/momentum-engine", icon: "🚀", web: "soon", streamlit: "partial",
-        description: "A momentum stock portfolio against Nifty 50, after costs.",
+        num: 8, title: "Momentum Engine Backtest", href: "/momentum-engine", icon: "🚀", web: "ready", streamlit: "partial",
+        description: "Top-N Nifty 50 / 200 momentum portfolio against Nifty 50, after costs and tax; current ranks.",
         planned: ["Momentum scores with trend, liquidity and index filters", "Top-N portfolio, monthly or weekly rebalance",
           "CAGR, drawdown, Sharpe and Sortino against Nifty 50"],
       },

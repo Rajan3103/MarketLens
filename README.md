@@ -39,7 +39,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 5 | Option Simulator | Replay a stored day minute by minute and trade it with virtual money | ✅ |
 | | 6 | Forward Test / Paper Trading | Run a saved strategy every minute on live Dhan (or DEMO) prices through the paper broker, as a background process; history vs backtest | ✅ (paper only) |
 | **Indicator & portfolio** | 7 | Signals & Indicator Strategy Builder | Indicator rules without code (AND / OR); backtest with entry / exit markers; scanner; Pine Script v6 export with webhook alerts; webhook receiver (FastAPI) that saves alerts, sends Telegram messages and places paper orders for "auto" strategies | ✅ |
-| | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
+| | 8 | Momentum Engine Backtest | Top-N Nifty 50 / 200 momentum portfolio vs Nifty 50 after costs and tax, buffer, inverse-volatility weights, current ranks, rebalance history (**web app**, `/momentum-engine`) | ✅ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
 | | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page (deploy, Start / Pause / Stop, status cards, orders, positions, confirmations, loss limits, error log) | 🛠️ |
@@ -64,6 +64,23 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 - Ready templates: 9:20 short straddle, 0.20-delta short strangle, Rs 50 premium strangle,
   iron condor, breakout option buying.
 - Buttons: Save to Strategy Library, Open a day in the Simulator, Start forward test.
+
+**8. Momentum Engine Backtest** (web app, http://localhost:3000/momentum-engine)
+- Nifty 50 or Nifty 200, from / to dates, **top N**, **"keep while in the top M"** buffer (cuts trading),
+  monthly or weekly rebalance, **equal or inverse-volatility weights**, capital, and the ranking filters
+  (3 / 6 / 12-month momentum skipping the last month, 200-day average, traded value, big one-day moves,
+  Nifty 50 above its 200-day average else LIQUIDBEES or cash).
+- **No look-ahead:** ranked at a month's (week's) last close, traded at the next day's close (tested).
+- Equity-delivery costs, slippage and capital gains tax (shared with module 9 in `momentum/portfolio.py`).
+- Results against **Nifty 50 buy-and-hold** (and the Nifty 200 Momentum 30 ETF `MOMENTUM` / `MOM30IETF`
+  when stored): value and drawdown charts, CAGR / drawdown / Sharpe / Sortino table, year by year,
+  holdings, every rebalance, trades, tax by year.
+- Tabs **Backtest** (progress bar, background job), **Current ranks** (historical model output, not
+  advice) and **Rebalance history** (buys and sells on each date of a saved run).
+- Missing prices are listed with their dates and downloaded with one button (`sync_prices()`); a start
+  too early for the stored history gets a warning with the earliest fair start.
+- Fast: 10 years of 200 stocks in about 2 s (monthly) to 9 s (weekly, inverse volatility).
+- Save to the Strategy Library; the library's **Open in backtester** opens it here (`?strategy=<id>`).
 
 **5. Option Simulator**
 - Play, Pause, +1 / +5 minutes, speed 1x–30x, jump to a time, time slider.
@@ -223,6 +240,7 @@ and is never uploaded. Restart the app after changing it.
 | `MAX_DAILY_LOSS_RS`, `MAX_OPEN_POSITIONS`, `MAX_ORDERS_PER_SECOND`, `MAX_CAPITAL_PER_TRADE_RS`, `MAX_STRATEGY_LOSS_RS`, `SQUARE_OFF_ON_KILL`, `CONFIRM_TIMEOUT_MIN` | Risk limits (order service) | Safe defaults |
 | `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
 | `API_PORT` | Port of the backend API, which also receives the webhook alerts (default 8000; the old name `WEBHOOK_PORT` still works) | 8000 |
+| `FRONTEND_URL` | Address of the web app; Streamlit pages link to it (page 8 opens library strategies there) | http://localhost:3000 |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Webhook alerts (module 7), the 08:45 login reminder, order and kill-switch messages, Confirm / Reject buttons for live orders; the bot later (module 12) | No messages are sent (they are still saved in `notifications`); confirm live orders on the command line |
 
 **Settings & Status** shows which keys are still missing.
@@ -272,6 +290,7 @@ Migrations so far:
 | 0010 | Order status `WAITING_CONFIRMATION` (live orders waiting for your Confirm); `kill_switch_events` |
 | 0011 | `live_deployments` (strategies deployed on page 11) and `service_heartbeats` (background processes) |
 | 0012 | `background_jobs`: progress and results of slow work started through the API |
+| 0013 | `portfolio_holdings` also keeps the holdings after every rebalance of a saved backtest run (`run_id`, `rebalance_date`, price, value) |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -291,8 +310,13 @@ The momentum ranking (module 8) also needs the **Nifty 50 index** for its "only 
 above its 200-day average" filter. Download it once (later runs of the line add the missing days):
 
 ```bash
-python -c "import datetime as d; from marketlens.ingest.prices import sync_prices; print(sync_prices(['^NSEI'], d.date(2016, 1, 1)))"
+python -c "import datetime as d; from marketlens.ingest.prices import sync_prices; print(sync_prices(['^NSEI'], d.date(2014, 1, 1)))"
 ```
+
+The Momentum Engine page can also do this for you: its **Download missing prices** button syncs the stocks,
+Nifty 50 and the Nifty 200 Momentum 30 ETFs (`MOMENTUM`, `MOM30IETF`) from the first day the settings need.
+`sync_prices` only adds days *after* what is stored, so for a backtest starting in 2016 download from 2014
+the first time (the ranking needs about 13 months of earlier prices).
 
 The first run downloads everything (about 1.5 minutes for Nifty 200 × 10 years); later runs
 only fetch the missing days. Run it after market close each day. The stock lists live in
@@ -515,6 +539,13 @@ Open **http://127.0.0.1:8000/docs**: every endpoint is listed there with a *Try 
 | `GET /api/market/history?symbol=RELIANCE.NS&period=1y&fast=20&slow=50&ma200=true&bollinger=true` | daily OHLC, volume, both averages, MA200, RSI 14, Bollinger Bands, crossover signals and the 3-panel chart (Plotly JSON); prices kept 60 s |
 | `GET /api/market/history/download?symbol=...&period=1y&fast=20&slow=50&format=csv` | the same rows as a CSV or Excel (`format=xlsx`) file |
 | `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/cancel` | progress, message and result of a background job; cancel it |
+| `GET /api/momentum/options` | default momentum settings and the form's choices |
+| `POST /api/momentum/data-check` | which stored prices are missing for these settings (and a warning when the history starts too late) |
+| `POST /api/momentum/backtest` | run a momentum backtest as a **background job**; the job's result is the whole report with a `run_id` |
+| `POST /api/momentum/sync-prices` | download the missing prices with `sync_prices()` (**background job**) |
+| `GET /api/momentum/ranks?universe=nifty200&top_n=20` | today's ranks (historical model output, not advice); `settings=<JSON>` or `strategy_id=` to rank with other settings |
+| `GET /api/momentum/runs`, `GET /api/momentum/runs/{run_id}/rebalances` | saved momentum runs; buys and sells on each rebalance |
+| `POST /api/momentum/strategies`, `GET /api/momentum/strategies/{id}` | save the settings in the Strategy Library; open a saved one |
 | `POST /webhook/tradingview`, `POST /webhook/chartink`, `GET /webhook/health` | the webhook receiver (step 10) |
 
 Errors always come back as `{"error": "<plain-English message>"}` (400 when the request is wrong, 500 when
@@ -650,7 +681,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **812 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **839 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -702,10 +733,11 @@ MarketLens/
 │   │                       # (answer shapes, df_to_records, fig_to_json), routes/ (settings, market, webhook)
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (webhook router)
 │   ├── alerts/             # telegram.py (send a Telegram message)
-│   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
+│   ├── momentum/           # ranking.py (scores, filters), portfolio.py (cash, lots, costs, tax, shared),
+│   │                       # portfolio_bt.py (stock momentum backtest, module 8), etf_bt.py (ETF rotation, module 9)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
 │   └── scheduler/          # for the upcoming modules
-├── migrations/             # Alembic migrations 0001 .. 0012
+├── migrations/             # Alembic migrations 0001 .. 0013
 ├── frontend/               # web app (Next.js): app/ pages, components/, lib/ (see Frontend above)
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
@@ -733,8 +765,8 @@ default, DEMO data without keys, tests for every calculation).
   price above its 200-day average, minimum traded value (Rs crore), biggest one-day move; buys
   only when Nifty 50 is above its 200-day average, else holds LIQUIDBEES or cash. Uses only the
   prices up to the chosen date (tested). Needs Nifty 50 prices: sync `^NSEI` once.
-- Next: hold the top N, rebalance monthly or weekly, and the page.
-- CAGR, max drawdown, Sharpe, Sortino against Nifty 50, after all costs.
+- ✅ Done: the portfolio backtest (`portfolio_bt.py`) and the web page with ranks and rebalance history.
+- Next: paper-trade the current picks each month (like the forward test), and a parameter sweep.
 
 ### 9. ETF Momentum Portfolio (remaining)
 - Turning the current signal into paper rebalancing orders (and a monthly reminder).

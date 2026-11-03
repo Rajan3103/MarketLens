@@ -36,7 +36,7 @@ SOURCES = {"options_backtester": "Options Backtester (4)", "strategy_builder": "
            "forward_indicator": "Forward test quick rule (6)", "signals_builder": "Signals builder (7)",
            "momentum_engine": "Momentum Engine (8)", "etf_momentum": "ETF Momentum (9)"}
 PAGES = {"options": "dashboards/options_backtester.py", "signals": "dashboards/signals_builder.py",
-         "etf": "dashboards/etf_momentum.py", "simulator": "dashboards/option_simulator.py",
+         "etf": "dashboards/etf_momentum.py", "momentum": "dashboards/momentum_engine.py", "simulator": "dashboards/option_simulator.py",
          "forward": "dashboards/forward_test.py", "live": "dashboards/live_trading.py"}
 EXPORT_FORMAT = "marketlens-strategies"
 SCREENSHOT_TYPES = (".png", ".jpg", ".jpeg", ".webp", ".gif")
@@ -71,14 +71,14 @@ def source_of(params: dict) -> str | None:
 def actions_for(source: str | None) -> dict:
     """Returns {"backtest": page or None, "simulator": bool, "forward": bool, "live": True, "why": {...}}."""
     backtest = {"options_backtester": PAGES["options"], "strategy_builder": PAGES["options"],
-                "signals_builder": PAGES["signals"], "etf_momentum": PAGES["etf"]}.get(source)
+                "signals_builder": PAGES["signals"], "etf_momentum": PAGES["etf"],
+                "momentum_engine": PAGES["momentum"]}.get(source)
     options = source in ("options_backtester", "strategy_builder")
     forward = source in ("options_backtester", "forward_indicator")
     why = {}
     if backtest is None:
         why["backtest"] = ("Quick forward-test rules have no backtester page; rebuild the rule in the Signals "
                            "builder (7)." if source == "forward_indicator"
-                           else "The Momentum Engine page (8) is not built yet." if source == "momentum_engine"
                            else "This strategy does not say which page made it.")
     if not options:
         why["simulator"] = "The simulator replays option days; it only opens option strategies."
@@ -324,7 +324,8 @@ def handoff_for(strategy: dict, action: str) -> tuple[str, object, str]:
                      "strike": leg["params"].get("strike")} for leg in strategy["legs"]]
             return "handoff", {"to": "backtest", "name": strategy["name"], "underlying": params.get("underlying", "NIFTY"),
                                "spot": params.get("spot_at_save"), "legs": legs}, can["backtest"]
-        to = {"options_backtester": "backtest_saved", "signals_builder": "signals", "etf_momentum": "etf"}[source]
+        to = {"options_backtester": "backtest_saved", "signals_builder": "signals", "etf_momentum": "etf",
+              "momentum_engine": "momentum"}[source]
         return "handoff", {"to": to, "strategy_id": strategy["id"], "name": strategy["name"],
                            "params": strategy["params"]}, can["backtest"]
     if action == "simulator":
