@@ -95,8 +95,8 @@ export const GROUPS = [
           "Combined performance against Nifty 50"],
       },
       {
-        num: 11, title: "Live Algo Trading & Bot Monitor", href: "/live-trading", icon: "🤖", web: "soon",
-        streamlit: "partial",
+        num: 11, title: "Live Algo Trading & Bot Monitor", href: "/live-trading", icon: "🤖", web: "ready",
+        streamlit: "ready",
         description: "Deploy strategies, watch them run, and stop everything when needed.",
         planned: ["Deploy with lots multiplier, max loss and confirm / automatic orders", "Start, pause and stop per strategy",
           "Status cards, open positions, today's orders and confirmations", "Loss limits, kill switch and error log"],

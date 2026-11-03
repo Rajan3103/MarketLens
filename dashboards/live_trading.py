@@ -122,7 +122,10 @@ with deploy_tab:
     handoff = st.session_state.get("handoff")
     if handoff and handoff.get("to") == "live":
         st.session_state["lt_pick"] = handoff["strategy_id"]
+        st.session_state["lt_web"] = handoff.get("web")
         st.session_state.pop("handoff")
+    if st.session_state.get("lt_web"):
+        st.link_button("Open this strategy in the web app", st.session_state["lt_web"])
     if strategies.empty:
         st.info("No runnable strategies yet. Save one from the Options Backtester (page 4) or make an indicator "
                 "strategy on page 6, forward-test it, then deploy it here.")

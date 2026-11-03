@@ -1,9 +1,17 @@
-// Not built in the web app yet: shows what it will do (see lib/modules.js).
-import ComingSoon from "@/components/ComingSoon";
-import { moduleFor } from "@/lib/modules";
+// Module 11: Live Algo Trading & Bot Monitor (the page itself is in LiveTrading.jsx).
+// It reads ?strategy= from the address (Strategy Library -> Deploy live), so it sits inside <Suspense>.
+import { Suspense } from "react";
 
-export const metadata = { title: moduleFor("/live-trading").title };
+import Loading from "@/components/Loading";
+
+import LiveTrading from "./LiveTrading";
+
+export const metadata = { title: "Live Algo Trading & Bot Monitor" };
 
 export default function LiveTradingPage() {
-  return <ComingSoon href="/live-trading" />;
+  return (
+    <Suspense fallback={<Loading />}>
+      <LiveTrading />
+    </Suspense>
+  );
 }

@@ -42,7 +42,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 8 | Momentum Engine Backtest | Top-N Nifty 50 / 200 momentum portfolio vs Nifty 50 after costs and tax, buffer, inverse-volatility weights, current ranks, rebalance history (**web app**, `/momentum-engine`) | ✅ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
-| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page (deploy, Start / Pause / Stop, status cards, orders, positions, confirmations, loss limits, error log) | 🛠️ |
+| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page, in Streamlit and the **web app** (`/live-trading`: deploy, Start / Pause / Stop, status cards, orders, positions, Confirm / Reject, loss limits, kill switch, error log) | ✅ |
 | | 12 | Telegram Bot Control Panel | | 📋 |
 
 ### Highlights of the ready modules
@@ -546,6 +546,12 @@ Open **http://127.0.0.1:8000/docs**: every endpoint is listed there with a *Try 
 | `GET /api/momentum/ranks?universe=nifty200&top_n=20` | today's ranks (historical model output, not advice); `settings=<JSON>` or `strategy_id=` to rank with other settings |
 | `GET /api/momentum/runs`, `GET /api/momentum/runs/{run_id}/rebalances` | saved momentum runs; buys and sells on each rebalance |
 | `POST /api/momentum/strategies`, `GET /api/momentum/strategies/{id}` | save the settings in the Strategy Library; open a saved one |
+| `GET /api/live/status` | module 11 banner and status cards: PAPER / LIVE, AUTO_TRADE, kill switch, Dhan login (with renew steps), runner heartbeat, API, Telegram, scheduler, database |
+| `GET /api/live/strategies`, `GET /api/live/strategies/{id}/check` | runnable library strategies and what each still needs for live (saved backtest, 10 forward-test days) |
+| `POST /api/live/deploy`, `GET /api/live/deployments`, `POST /api/live/deployments/{id}/status` | deploy (lots multiplier, max loss, auto / confirm); start, pause, stop |
+| `GET /api/live/monitor`, `POST /api/live/signals/{id}/confirm`, `.../reject` | running strategies, open positions, today's orders, waiting orders; Confirm / Reject |
+| `GET /api/live/limits`, `POST /api/live/kill` (`{"confirm": "KILL"}`), `POST /api/live/unkill`, `POST /api/live/square-off` (`{"confirm": "SQUARE OFF"}`) | loss limits; kill switch; square off everything |
+| `POST /api/live/runner/start`, `POST /api/live/login/check`, `GET /api/live/errors?days=1&level=ERROR&module=&text=` | start the live runner; check today's Dhan login; the error log |
 | `POST /webhook/tradingview`, `POST /webhook/chartink`, `GET /webhook/health` | the webhook receiver (step 10) |
 
 Errors always come back as `{"error": "<plain-English message>"}` (400 when the request is wrong, 500 when
@@ -628,6 +634,8 @@ backend), and the building blocks every page uses, so they all look and behave t
 | `FormField` | a label with its unit above an input |
 | `ProgressBar` | a plain bar, or `jobId=...` to follow a background job every second (with Cancel) |
 | `DownloadButton` | saves a CSV / Excel file made by an API endpoint |
+| `DangerButton` | for things that cannot be undone: tick box, click, then click again within 8 s |
+| `BacktestResults` | cards, strategy vs Nifty table, value and drawdown charts, yearly returns, holdings, rebalances, trades |
 | `DemoBanner`, `HistoricalNote`, `HelpNote`, `Loading`, `ErrorBox` | the DEMO warning, the fixed learning note, a "what does this mean?" box, waiting and problem messages |
 
 `frontend/lib/usePolling.js` repeats a request every N seconds only while the page is open and visible
@@ -681,7 +689,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **839 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **847 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and

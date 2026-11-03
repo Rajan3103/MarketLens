@@ -226,6 +226,7 @@ def test_actions_and_handoffs():
     assert lib.handoff_for({**builder, "params": {"source": "options_backtester"}}, "forward") == ("f_pick", 4, lib.PAGES["forward"])
     key, value, page = lib.handoff_for(builder, "live")
     assert value["to"] == "live" and page == lib.PAGES["live"]
+    assert value["web"].endswith(f"/live-trading?strategy={builder['id']}")
 
 
 def test_performance_curve_and_benchmark():

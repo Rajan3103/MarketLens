@@ -310,6 +310,12 @@ def import_strategies(text: str | bytes, url: str | None = None) -> list[tuple[i
     return added
 
 
+# The web app's page for a strategy, e.g. http://localhost:3000/live-trading?strategy=7.
+def web_address(page: str, strategy_id: int) -> str:
+    from marketlens import config
+    return f"{config.FRONTEND_URL}/{page}?strategy={strategy_id}"
+
+
 # What another page needs to open a strategy: (session_state key, value, page file).
 def handoff_for(strategy: dict, action: str) -> tuple[str, object, str]:
     """action: backtest, simulator, forward or live. Raises ValueError when not possible."""
@@ -340,7 +346,8 @@ def handoff_for(strategy: dict, action: str) -> tuple[str, object, str]:
         return "f_pick", strategy["id"], PAGES["forward"]
     if action == "live":
         return "handoff", {"to": "live", "strategy_id": strategy["id"], "name": strategy["name"],
-                           "kind": strategy["kind"], "source": source}, PAGES["live"]
+                           "kind": strategy["kind"], "source": source,
+                           "web": web_address("live-trading", strategy["id"])}, PAGES["live"]
     raise ValueError(f"Unknown action {action!r}")
 
 
