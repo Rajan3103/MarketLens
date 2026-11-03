@@ -510,8 +510,10 @@ Open **http://127.0.0.1:8000/docs**: every endpoint is listed there with a *Try 
 | --- | --- |
 | `GET /api/health` | `{status, version, database: ok/fail, mode: PAPER/LIVE, demo: true/false}` |
 | `GET /api/settings/status` | which keys are set (never their values), trading mode, database |
-| `GET /api/market/history?symbol=RELIANCE.NS&period=1y` | daily OHLC, volume, 20 / 50-day averages, crossover signals and the chart (Plotly JSON) |
-| `GET /api/market/history/download?symbol=...&period=1y&format=csv` | the same rows as a CSV or Excel (`format=xlsx`) file |
+| `GET /api/market/snapshot` | index cards, Nifty 50 top 5 gainers / losers and breadth. Fetching takes about 8 s, so it runs as a **background job**: you get the last snapshot at once plus a `job_id` to follow (kept 55 s) |
+| `GET /api/market/sectors?window=1 week` | sector heatmap (1 day / 1 week / 1 month): table and treemap (kept 5 minutes) |
+| `GET /api/market/history?symbol=RELIANCE.NS&period=1y&fast=20&slow=50&ma200=true&bollinger=true` | daily OHLC, volume, both averages, MA200, RSI 14, Bollinger Bands, crossover signals and the 3-panel chart (Plotly JSON); prices kept 60 s |
+| `GET /api/market/history/download?symbol=...&period=1y&fast=20&slow=50&format=csv` | the same rows as a CSV or Excel (`format=xlsx`) file |
 | `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/cancel` | progress, message and result of a background job; cancel it |
 | `POST /webhook/tradingview`, `POST /webhook/chartink`, `GET /webhook/health` | the webhook receiver (step 10) |
 
@@ -648,7 +650,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **800 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **812 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and

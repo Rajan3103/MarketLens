@@ -108,3 +108,47 @@ class RateLimiter:
             self.wait()
             return func(*args, **kwargs)
         return wrapper
+
+
+class TtlCache:
+    """Remembers answers for a few seconds (like Streamlit's st.cache_data(ttl=...), for the web API).
+
+        cache = TtlCache()
+        prices = cache.get(("RELIANCE.NS", "2y"), 60, lambda: download_history("RELIANCE.NS", "2y"))
+
+    Safe to share between threads. Errors are not remembered, so the next call tries again.
+    """
+
+    # clock can be swapped for a fake one in tests.
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._items = {}            # key -> (time saved, value)
+        self._lock = threading.Lock()
+
+    # The saved value when it is younger than `seconds`, otherwise make() it now and save it.
+    def get(self, key, seconds: float, make):
+        found = self.peek(key, seconds)
+        if found is not None:
+            return found[1]
+        value = make()
+        self.put(key, value)
+        return value
+
+    # (age in seconds, value) when saved less than `seconds` ago (any age when seconds is None), else None.
+    def peek(self, key, seconds: float | None = None):
+        with self._lock:
+            item = self._items.get(key)
+        if item is None:
+            return None
+        age = self._clock() - item[0]
+        return (age, item[1]) if seconds is None or age < seconds else None
+
+    # Save a value now.
+    def put(self, key, value):
+        with self._lock:
+            self._items[key] = (self._clock(), value)
+
+    # Forget everything (tests use this).
+    def clear(self):
+        with self._lock:
+            self._items.clear()

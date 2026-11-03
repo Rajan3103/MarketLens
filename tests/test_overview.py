@@ -181,3 +181,64 @@ def test_sector_skip_is_logged(monkeypatch):
     table, skipped = overview.sector_changes(data, "1 day")
     assert skipped == ["IT", "Media"] and "IT" not in set(table["sector"])
     assert any("IT (^CNXIT)" in m for m in messages) and any("Media" in m for m in messages)
+
+
+# ---- price chart with indicators ----
+
+# 300 made-up trading days of rising prices, with volume.
+def chart_prices(days=300) -> pd.DataFrame:
+    dates = pd.bdate_range("2025-06-02", periods=days)
+    close = pd.Series([100 + i * 0.5 + (i % 7) for i in range(days)], index=dates, dtype=float)
+    return pd.DataFrame({"Open": close - 1, "High": close + 2, "Low": close - 2, "Close": close,
+                         "Volume": 1000.0}, index=dates)
+
+
+# Every indicator column is added; the table is cut to the last months but MA200 is ready on its first day.
+def test_indicator_table():
+    prices = chart_prices()
+    table = overview.indicator_table(prices, 10, 30, months=3)
+    assert {"MA10", "MA30", "Signal", "MA200", "RSI", "mid", "upper", "lower"} <= set(table.columns)
+    assert table.index[0] >= table.index[-1] - pd.DateOffset(months=3) and len(table) < len(prices)
+    assert table["MA200"].notna().all() and table["RSI"].between(0, 100).all()
+    assert table["MA200"].iloc[-1] == pytest.approx(prices["Close"].iloc[-200:].mean())
+    assert (table["lower"] < table["mid"]).all() and (table["mid"] < table["upper"]).all()
+    assert len(overview.indicator_table(prices, 10, 30)) == len(prices)         # months=None keeps everything
+    with pytest.raises(ValueError, match="must be shorter"):
+        overview.indicator_table(prices, 50, 50)
+
+
+# The chart has 3 panels; the 200-day MA and Bollinger Bands appear only when asked.
+def test_indicator_chart():
+    table = overview.indicator_table(chart_prices(), 20, 50, months=6)
+    names = [t.name for t in overview.indicator_chart(table, 20, 50).data]
+    assert names == ["Price", "20-day MA", "50-day MA", "Buy (bullish cross)", "Sell (bearish cross)", "RSI 14",
+                     "Volume"]
+    full = overview.indicator_chart(table, 20, 50, show_ma200=True, show_bb=True)
+    assert {"200-day MA", "Bollinger upper", "Bollinger lower"} <= {t.name for t in full.data}
+    assert full.layout.yaxis2.range == (0, 100) and full.layout.yaxis3 is not None
+
+
+# Indices have no volume on Yahoo Finance.
+def test_has_no_volume():
+    prices = chart_prices(5)
+    assert overview.has_no_volume(prices) is False
+    assert overview.has_no_volume(prices.assign(Volume=[0, None, 0, 0, 0])) is True
+
+
+# The summary behind the cards, movers and breadth.
+def test_summarise():
+    snap = overview.Snapshot(pd.DataFrame(columns=overview.COLUMNS), stocks({"A": 2, "B": -1, "C": 0}), SOURCE_DHAN,
+                             dt.datetime(2026, 11, 3, 10, 0, tzinfo=IST))
+    s = overview.summarise(snap, n=5)
+    assert list(s["gainers"]["symbol"]) == ["A"] and list(s["losers"]["symbol"]) == ["B"]
+    assert s["breadth"]["unchanged"] == 1 and s["stock_count"] == 3 and s["live"] is True
+
+
+# Breadth bar (3 parts) and sector treemap (one tile per sector).
+def test_breadth_and_sector_charts():
+    bar = overview.breadth_chart({"advances": 30, "declines": 18, "unchanged": 2, "ad_ratio": 1.67})
+    assert [t.name for t in bar.data] == ["Advances", "Unchanged", "Declines"] and bar.data[0].x == (30,)
+    table, _ = overview.sector_changes(fake_sector_data(), "1 day")
+    tree = overview.sector_chart(table)
+    assert tree.data[0].type == "treemap" and len(tree.data[0].labels) == 9
+    assert tree.data[0].marker.cmax == pytest.approx(1.0) and tree.data[0].marker.cmin == pytest.approx(-1.0)

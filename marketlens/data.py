@@ -61,24 +61,3 @@ def add_moving_averages(df: pd.DataFrame, fast: int = 20, slow: int = 50) -> pd.
     # A change from 0 to 1 is a bullish cross, from 1 to 0 a bearish cross
     df["Signal"] = above.diff().fillna(0).astype(int)
     return df
-
-
-# Candlestick chart with the fast / slow moving averages and the crossover markers (page 1 and the API).
-def crossover_chart(df: pd.DataFrame, title: str = "", fast: int = 20, slow: int = 50):
-    """df: the output of add_moving_averages (date index, Open/High/Low/Close, MA columns, Signal)."""
-    import plotly.graph_objects as go
-    buys, sells = df[df["Signal"] == 1], df[df["Signal"] == -1]
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
-                                 name="Price"))
-    fig.add_trace(go.Scatter(x=df.index, y=df[f"MA{fast}"], name=f"{fast}-day MA", line=dict(color="#2a78d6")))
-    fig.add_trace(go.Scatter(x=df.index, y=df[f"MA{slow}"], name=f"{slow}-day MA", line=dict(color="#eb6834")))
-    fig.add_trace(go.Scatter(x=buys.index, y=buys["Close"], mode="markers", name="Buy (bullish cross)",
-                             marker=dict(symbol="triangle-up", size=13, color="#16a34a")))
-    fig.add_trace(go.Scatter(x=sells.index, y=sells["Close"], mode="markers", name="Sell (bearish cross)",
-                             marker=dict(symbol="triangle-down", size=13, color="#dc2626")))
-    fig.update_layout(title=title or None, height=520, xaxis_rangeslider_visible=False, hovermode="x unified",
-                      legend=dict(orientation="h", y=1.08), margin=dict(l=10, r=10, t=60, b=10),
-                      yaxis_title="Price (Rs)")
-    return fig
-

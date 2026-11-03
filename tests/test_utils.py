@@ -141,3 +141,28 @@ def test_rate_limiter_default_from_config():
 def test_rate_limiter_bad_limit():
     with pytest.raises(ValueError):
         RateLimiter(0)
+
+
+# ---- TtlCache ----
+
+# A saved answer is reused until it is older than the limit; errors are never saved.
+def test_ttl_cache():
+    now = {"t": 100.0}
+    cache = utils.TtlCache(clock=lambda: now["t"])
+    made = []
+    make = lambda: made.append(1) or len(made)          # noqa: E731  (returns 1, then 2, ...)
+    assert cache.get("k", 60, make) == 1
+    now["t"] += 59
+    assert cache.get("k", 60, make) == 1 and len(made) == 1
+    assert cache.peek("k", 60) == (59.0, 1)
+    now["t"] += 1                                         # exactly 60 s old: too old
+    assert cache.peek("k", 60) is None and cache.peek("k") == (60.0, 1)
+    assert cache.get("k", 60, make) == 2
+
+    def broken():
+        raise ConnectionError("offline")
+    with pytest.raises(ConnectionError):
+        cache.get("other", 60, broken)
+    assert cache.peek("other") is None
+    cache.clear()
+    assert cache.peek("k") is None
