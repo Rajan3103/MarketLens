@@ -520,6 +520,63 @@ automatically. `marketlens/api/schemas.py` turns pandas tables (`df_to_records`)
 
 ---
 
+## Frontend (web app, Next.js)
+
+A second way to use MarketLens: a web app in `frontend/` (Next.js + Tailwind CSS). It is being built page
+by page; today it has the menu, the Home cards and **Settings & Status**, and every other page shows
+what it will do. The Streamlit app (`streamlit run app.py`) keeps working as before.
+
+**How the pieces talk:** your browser opens http://localhost:3000 (the web app). When a page needs data
+it asks `/api/...`; the web app forwards that to the Python backend API on http://127.0.0.1:8000, which
+reads the database and answers in JSON. The browser never talks to Python directly.
+
+### 1. Install Node.js (once)
+
+Download the **LTS** version from https://nodejs.org (Windows: the `.msi` installer, keep the defaults).
+On Ubuntu:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+Check it in a new terminal: `node --version` must show **v20.9 or newer** (Next.js 16 needs it), and
+`npm --version` must answer.
+
+### 2. Install the web app's packages (once, and after `git pull` changes `package.json`)
+
+```bash
+cd frontend
+npm install
+```
+
+This fills `frontend/node_modules/` (large, never uploaded). To point the app at another backend address,
+copy `frontend/.env.local.example` to `frontend/.env.local` and change `BACKEND_URL`.
+
+### 3. The two-terminal routine (every time)
+
+| Terminal 1: the Python API | Terminal 2: the web app |
+| --- | --- |
+| `cd MarketLens` | `cd MarketLens/frontend` |
+| `.venv\Scripts\Activate.ps1` (Ubuntu: `source .venv/bin/activate`) | |
+| `python -m marketlens.api` | `npm run dev` |
+| keeps running; reloads when you save a `.py` file | keeps running; reloads when you save a `.jsx` file |
+
+Then open **http://localhost:3000**. The top bar shows **PAPER** (blue) or **LIVE** (red) and **DEMO DATA**
+from `/api/health`; it shows **API NOT RUNNING** when terminal 1 is not running. Stop either with `Ctrl + C`.
+
+| Command (in `frontend/`) | What it does |
+| --- | --- |
+| `npm run dev` | the web app for development, http://localhost:3000 |
+| `npm run lint` | checks the code for mistakes (ESLint) |
+| `npm run build` | a production build (checks every page can be built) |
+
+Where things are: `frontend/app/` (one folder per page), `frontend/components/` (menu + top bar,
+ComingSoon, Settings), `frontend/lib/modules.js` (the menu and Home cards), `frontend/lib/api.js`
+(`apiGet` / `apiPost`), `frontend/next.config.mjs` (forwards `/api` and `/webhook` to the backend).
+
+---
+
 ## Where the data comes from
 
 | Data | Source | Key needed | Used by |
@@ -622,6 +679,7 @@ MarketLens/
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
 │   └── scheduler/          # for the upcoming modules
 ├── migrations/             # Alembic migrations 0001 .. 0011
+├── frontend/               # web app (Next.js): app/ pages, components/, lib/ (see Frontend above)
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
 ├── data/universe/          # nifty50.csv, nifty200.csv, etfs.csv
@@ -678,7 +736,7 @@ default, DEMO data without keys, tests for every calculation).
 - Price alerts ("tell me when NIFTY goes above 25,500").
 
 ### Platform
-- **Web frontend** on the backend API (more endpoints: option chain, backtests, strategies, orders).
+- **Web frontend** (`frontend/`, started): each module page in turn, with the API endpoints it needs (option chain, backtests, strategies, orders).
 - **Scheduler:** daily price sync, option-data downloads after market close, morning checks.
 - **AWS deployment** (Mumbai region, static IP for Dhan orders) with the app and background
   processes running all day.

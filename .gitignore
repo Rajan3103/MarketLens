@@ -22,3 +22,8 @@ data/journal/
 
 # pytest leftovers
 .pytest_cache/
+
+# Web frontend (Next.js): packages, build output and the private settings file
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
