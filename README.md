@@ -10,7 +10,8 @@ indicator strategies (with TradingView Pine Script export and webhook alerts), b
 momentum portfolio after costs and capital gains tax, and keeps every strategy, trade and journal
 note in one Strategy Library. It has a live **Dhan** broker behind an order service that checks
 risk rules before every order (daily loss kill switch, lot sizes, capital, open positions, Dhan login)
-and asks for your Telegram confirmation for live orders. Next: a bot monitor page, a Telegram bot and
+and asks for your Telegram confirmation for live orders; page 11 deploys strategies and monitors them.
+Next: a Telegram bot and
 an AWS server.
 
 > Everything in this app is historical analysis for learning.
@@ -41,7 +42,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 8 | Momentum Engine Backtest | Ranking engine ready (`marketlens/momentum/ranking.py`: scores, filters, Nifty 50 index filter); backtest and page next | 🛠️ |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
-| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; bot monitor page next | 🛠️ |
+| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page (deploy, Start / Pause / Stop, status cards, orders, positions, confirmations, loss limits, error log) | 🛠️ |
 | | 12 | Telegram Bot Control Panel | | 📋 |
 
 ### Highlights of the ready modules
@@ -147,6 +148,17 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
   live orders wait for your Telegram Confirm when `AUTO_TRADE=false` (setup step 13).
 - **Kill switch:** switches on when today's loss reaches `MAX_DAILY_LOSS_RS`, blocks new orders for the
   rest of the day (exits still allowed) and, if you chose so, closes every position.
+- **Deploy (page 11):** pick a strategy from the library; **live** deployment needs a saved backtest and at
+  least 10 forward-test days (the page shows what is missing). Lots multiplier, the strategy's own max loss,
+  confirm or automatic orders, and Start / Pause / Stop per strategy.
+- **Live runner** (`python -m marketlens.trading.live_runner`): runs every deployed strategy each minute with
+  the forward tester's rule code (the same rules as the backtest), but every order goes through the order
+  service. A heartbeat every minute; a strategy deployed for paper is paused if `TRADING_MODE` becomes live.
+- **Bot Monitor:** a big PAPER (blue) / LIVE (red) banner with AUTO_TRADE and the kill switch; status cards
+  (Dhan login, live runner, webhook server, Telegram bot, scheduler, database); running strategies with
+  today's P&L, open positions, today's orders, orders waiting for Confirm / Reject; loss-limit progress bars;
+  "Kill switch" and "Square off everything" buttons (each with a confirm tick); the error log with filters.
+  Refreshes every 10 s in market hours.
 
 ---
 
@@ -257,6 +269,7 @@ Migrations so far:
 | 0008 | One forward-test row per strategy per day, with state, message and heartbeat |
 | 0009 | Trade journal: link to the trade, source, 1-5 rating; daily whole-account holdings snapshots |
 | 0010 | Order status `WAITING_CONFIRMATION` (live orders waiting for your Confirm); `kill_switch_events` |
+| 0011 | `live_deployments` (strategies deployed on page 11) and `service_heartbeats` (background processes) |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -460,7 +473,26 @@ python -m marketlens.trading.order_service unkill
 ```
 
 Every step is written to `logs/marketlens.log`, orders to `orders`, messages to `notifications` and
-errors to `error_log`. Run `alembic upgrade head` once (migration 0010).
+errors to `error_log`. Run `alembic upgrade head` once (migrations 0010 and 0011).
+
+### 14. Deploy a strategy and run the live runner (page 11)
+
+1. Forward-test the strategy on page 6 for at least **10 market days** and save a backtest of it
+   (both are needed for LIVE; PAPER deployment is allowed at once).
+2. Page **11 → Deploy**: pick it, choose the lots multiplier, its max loss for the day and *Confirm each on
+   Telegram* or *Automatic* (automatic also needs `AUTO_TRADE=true`), then **Deploy**.
+3. Start the runner once (the page has a button, or keep a terminal open):
+
+```bash
+python -m marketlens.trading.live_runner           # every deployed strategy, every minute
+python -m marketlens.trading.live_runner --once    # one cycle, to try it
+```
+
+The runner writes `logs/live_runner.log` and checks in every minute (the *Live runner* card turns red
+when it stops). **Pause** = no new orders, positions stay; **Stop** = that strategy's positions are closed,
+then it stops. In live confirm mode, stop-loss and target exits also wait for your Confirm, and an exit
+that comes before you confirmed its entry cancels that entry. A strategy cannot be deployed while its
+forward test runs, because both use the same paper account.
 
 ---
 
@@ -510,7 +542,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **767 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **781 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -554,7 +586,8 @@ MarketLens/
 │   │                       # options_bt.py (the options backtester and its rules)
 │   ├── simulator/          # replay.py (replay clock and virtual trading)
 │   ├── trading/            # forward.py (forward-test runner), orders.py (webhook signal -> paper order),
-│   │                       # order_service.py (risk checks, kill switch, confirmations)
+│   │                       # order_service.py (risk checks, kill switch, confirmations),
+│   │                       # live_runner.py (deployed strategies), monitor.py (page 11 data)
 │   ├── signals/            # indicators, rules.py (conditions), backtest.py (backtest, chart, scanner),
 │   │                       # pine.py (Pine Script v6 export + validator)
 │   ├── webhook/            # payload.py (webhook format, checks, addresses, events), server.py (FastAPI receiver)
@@ -562,7 +595,7 @@ MarketLens/
 │   ├── momentum/           # ranking.py (scores, filters, rank on any date), etf_bt.py (ETF rotation backtest)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
 │   └── scheduler/          # for the upcoming modules
-├── migrations/             # Alembic migrations 0001 .. 0010
+├── migrations/             # Alembic migrations 0001 .. 0011
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
 ├── tests/                  # automatic tests (python -m pytest)
 ├── data/universe/          # nifty50.csv, nifty200.csv, etfs.csv
@@ -605,11 +638,11 @@ default, DEMO data without keys, tests for every calculation).
   `get_broker()` only when `TRADING_MODE=live`), the daily login check and the 08:45 reminder.
 - ✅ Done: the **order service** with risk checks before every order, the kill switch and
   Telegram Confirm / Reject for live orders (setup step 13).
-- Strategies and webhook "auto" orders running through the order service.
-- Per-strategy P&L for live trades (fills from Dhan's trade book), so the strategy loss limit also
-  works live (today only the daily total uses Dhan's real numbers).
-- **Bot Monitor page:** running bots, waiting confirmations, orders, positions, notifications,
-  errors (`error_log`) and kill-switch buttons.
+- ✅ Done: the **live runner** and the **Bot Monitor page** (setup step 14).
+- Webhook "auto" orders (module 7) running through the order service.
+- Fills read back from Dhan's trade book, so live P&L per strategy uses real fill prices (today the runner
+  counts its own strategies at the live price when the order was sent; manual live trades are not split
+  per strategy).
 - Dhan only accepts orders from a whitelisted static IP, so live trading will run on the server.
 
 ### 12. Telegram Bot Control Panel

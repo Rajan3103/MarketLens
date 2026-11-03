@@ -355,7 +355,7 @@ class ForwardRunner:
         now = self.clock()
         day = now.date()
         run_id, status, params = self._day_row(day)
-        self.broker.run_id = run_id
+        self._link_run(run_id)
         if status in ("stopping", "stopped"):
             closed = self._square_off("STOPPED")
             message = f"Stopped from the page; {closed} position(s) closed."
@@ -381,6 +381,10 @@ class ForwardRunner:
         self._save_row(run_id, state=state, message=message, params=params, pnl=self._today_pnl(params))
         return {"stop": False, "state": state, "message": message}
 
+    # Paper orders remember which forward-test day they belong to.
+    def _link_run(self, run_id: int):
+        self.broker.run_id = run_id
+
     # Today's P&L after costs: the paper account now minus where it stood at the start of the day.
     def _today_pnl(self, params: dict) -> float:
         return to_paise(self.broker.get_funds()["net_pnl"] - params.get("baseline_net", 0.0))
@@ -391,9 +395,18 @@ class ForwardRunner:
         for (symbol, product), pos in list(self.broker.positions.items()):
             if pos.is_open:
                 side = "SELL" if pos.qty > 0 else "BUY"
-                if self.broker.place_order(symbol, side, abs(pos.qty), product=product, tag=reason).filled:
+                if self._send(symbol, side, abs(pos.qty), product=product, tag=reason).status in ("FILLED", "PLACED"):
                     closed += 1
         return closed
+
+    # Send one order. The forward test uses the paper broker directly; the live runner
+    # (live_runner.py) replaces this to go through the order service's risk checks.
+    def _send(self, symbol: str, side: str, qty: int, product: str = "INTRADAY", tag: str | None = None):
+        return self.broker.place_order(symbol, side, qty, product=product, tag=tag)
+
+    # Did the entry with this key really go through (so its exit may be sent)?
+    def _entry_ok(self, done: dict, entry_key: str) -> bool:
+        return done.get(entry_key) == "FILLED"
 
     # The expiry to trade today, as listed by the exchange (a holiday moves it a day earlier).
     def _expiry(self, day: dt.date) -> dt.date:
@@ -437,14 +450,14 @@ class ForwardRunner:
             key = event["key"]
             if key in done:
                 continue
-            if event["kind"] == "X" and done.get(event["entry_key"]) != "FILLED":
+            if event["kind"] == "X" and not self._entry_ok(done, event["entry_key"]):
                 done[key] = "SKIPPED"                   # its entry never filled (e.g. rejected)
                 continue
             price = self.minutes.latest.get((event["strike"], event["type"]))
             if price is None:
                 continue                                # no live price yet: try again next minute
             self.broker.update_price(event["symbol"], price)
-            result = self.broker.place_order(event["symbol"], event["side"], event["qty"], tag=f"forward:{key}")
+            result = self._send(event["symbol"], event["side"], event["qty"], tag=f"forward:{key}")
             done[key] = result.status
             fills[key] = {"fill": result.avg_price, "engine": event["engine_price"], "status": result.status,
                           "message": result.message}
@@ -542,7 +555,7 @@ class ForwardRunner:
 
         # Send one order and remember it for the page.
         def order(side, n, reason):
-            result = self.broker.place_order(s.symbol, side, n, product=s.product, tag=f"forward:{reason}")
+            result = self._send(s.symbol, side, n, product=s.product, tag=f"forward:{reason}")
             trades.append({"time": f"{now:%H:%M}", "candle": last_ts, "side": side, "qty": n,
                            "paper_fill": result.avg_price, "status": result.status, "exit_reason": reason})
 
@@ -617,11 +630,16 @@ def status(strategy_id: int, url: str | None = None) -> dict | None:
 
 # Start the background process for a strategy (it keeps running when the browser is closed).
 def start_process(strategy_id: int, capital: float | None = None) -> int:
-    LOG_DIR.mkdir(exist_ok=True)
     command = [sys.executable, "-m", "marketlens.trading.forward", "--strategy", str(strategy_id)]
     if capital:
         command += ["--capital", str(capital)]
-    log_file = (LOG_DIR / f"forward_{strategy_id}.log").open("a")
+    return spawn(command, f"forward_{strategy_id}.log")
+
+
+# Start a Python command as a background process that outlives the app; its output goes to logs/<log_name>.
+def spawn(command: list[str], log_name: str) -> int:
+    LOG_DIR.mkdir(exist_ok=True)
+    log_file = (LOG_DIR / log_name).open("a")
     options = {"cwd": PROJECT_ROOT, "stdout": log_file, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL}
     if os.name == "nt":                               # Windows: its own process, no console window
         options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS

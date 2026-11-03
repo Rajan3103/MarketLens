@@ -316,8 +316,9 @@ class OrderService:
     def submit_signal(self, strategy=None, action: str = "BUY", symbol: str | None = None, qty: int | None = None,
                       legs: list[dict] | None = None, reason: str = "", price: float | None = None,
                       order_type: str = "MARKET", product: str = "INTRADAY", trigger_price: float | None = None,
-                      source: str = "manual") -> SignalResult:
-        """strategy: its id, its name or None (your own trades). qty is in units (lots x lot size)."""
+                      source: str = "manual", confirm: bool = False) -> SignalResult:
+        """strategy: its id, its name or None (your own trades). qty is in units (lots x lot size).
+        confirm=True: a live order always waits for your Confirm, even with AUTO_TRADE=true."""
         mode, now = config.TRADING_MODE, self.now()
         sid, name, params = self.strategy_info(strategy)
         legs = make_legs(action, symbol, qty, legs, price, order_type, product, trigger_price)
@@ -336,7 +337,7 @@ class OrderService:
             return SignalResult(signal_id, "ERROR", message=message)
         if problems:
             return self.block(legs, problems, mode, sid, signal_id, name)
-        if mode == "live" and not config.AUTO_TRADE:
+        if mode == "live" and (confirm or not config.AUTO_TRADE):
             return self.ask_confirmation(legs, sid, signal_id, name, reason)
         results = self.send(legs, broker, mode, sid, signal_id)
         return self.finish(signal_id, name, legs, results, mode)

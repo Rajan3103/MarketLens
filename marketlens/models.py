@@ -547,6 +547,43 @@ class BrokerSession(Base):
     )
 
 
+class LiveDeployment(Base):
+    """A strategy deployed on page 11: run by the live runner every minute (paper or live by TRADING_MODE).
+
+    status: running, paused (no new orders, positions stay), stopping (close this strategy's positions,
+    then stop) or stopped. One row per strategy; the day's live view is reset each new trading day.
+    """
+    __tablename__ = "live_deployments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id", ondelete="CASCADE"), unique=True)
+    mode: Mapped[str] = mapped_column(server_default="paper")     # the TRADING_MODE it was deployed for
+    status: Mapped[str] = mapped_column(server_default="running")
+    lots_multiplier: Mapped[int] = mapped_column(server_default=text("1"))
+    max_loss_rs: Mapped[Decimal | None] = mapped_column(Money)   # this strategy's daily loss limit
+    confirm: Mapped[bool] = mapped_column(server_default=text("true"))   # live: wait for your Telegram Confirm
+    capital: Mapped[Decimal | None] = mapped_column(Money)
+    trade_date: Mapped[dt.date | None]
+    state: Mapped[str | None]
+    message: Mapped[str | None] = mapped_column(Text)
+    pnl: Mapped[Decimal | None] = mapped_column(Money)         # today's P&L after costs
+    params: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)   # today's live view (legs, trades, orders done)
+    heartbeat_at: Mapped[dt.datetime | None]
+    started_at: Mapped[dt.datetime] = created_now()
+    stopped_at: Mapped[dt.datetime | None]
+    __table_args__ = (one_of("mode", ["paper", "live"]),
+                      one_of("status", ["running", "paused", "stopping", "stopped"]),
+                      CheckConstraint("lots_multiplier >= 1", name="lots_multiplier_positive"))
+
+
+class ServiceHeartbeat(Base):
+    """'I am alive' from each background process (live runner, webhook server, Telegram bot, scheduler)."""
+    __tablename__ = "service_heartbeats"
+    name: Mapped[str] = mapped_column(primary_key=True)
+    pid: Mapped[int | None]
+    beat_at: Mapped[dt.datetime]
+    message: Mapped[str | None] = mapped_column(Text)
+
+
 class KillSwitchEvent(Base):
     """Each time the kill switch is switched on or off. On = no new orders for the rest of that day."""
     __tablename__ = "kill_switch_events"

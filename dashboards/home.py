@@ -21,7 +21,7 @@ Welcome! Pick a dashboard from the menu on the left.
 | | 8 | Momentum Engine Backtest | Momentum stock portfolio against Nifty 50 | 📋 |
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation after costs and tax vs Nifty 50; check a claim; parameter sweep | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library, holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
-| | 11 | Live Algo Trading & Bot Monitor | Dhan live broker, daily login check, order service with risk checks, kill switch and Telegram confirm (paper by default); bot monitor page next | 🛠️ |
+| | 11 | Live Algo Trading & Bot Monitor | Deploy strategies (live needs a backtest + 10 forward-test days), live runner, risk checks, kill switch, Telegram confirm, bot monitor with status cards, loss limits and error log (paper by default) | 🛠️ |
 | | 12 | Telegram Bot Control Panel | Alerts and bot commands on Telegram | 📋 |
 """
 )
