@@ -16,7 +16,7 @@ from marketlens import library as lib
 from marketlens.backtest import charts
 from marketlens.broker.candles import IST
 from marketlens.broker.dhan_client import has_keys
-from marketlens.ui import historical_note, key_notice, trading_mode_banner
+from marketlens.ui import help_note, historical_note, key_notice, trading_mode_banner
 
 SOURCE_NAMES = {"paper": "Paper", "forward": "Forward test", "live": "Live", "simulator": "Simulator"}
 
@@ -41,6 +41,10 @@ def open_elsewhere(strategy: dict, action: str):
 
 
 st.title("📚 Personal Analytics & Strategy Library")
+help_note("What this page does: every saved strategy, your holdings and P&L, a trade journal and your combined "
+          "performance against Nifty 50.\n"
+          "How to read it: values and P&L in Rs after costs, returns and weights in %, dates as DD-MMM-YYYY; "
+          "paper, forward-test, simulator and live trades can be filtered apart.")
 trading_mode_banner()
 library_tab, holdings_tab, journal_tab, perf_tab = st.tabs(
     ["📚 Strategy library", "💼 Holdings & P&L", "📓 Trade journal", "📈 Performance"])
@@ -208,7 +212,7 @@ with holdings_tab:
         fig.add_scatter(x=history["date"], y=history["invested"], name="Invested",
                         line=dict(color=charts.BENCHMARK_COLOR, dash="dot"))
         fig.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10), yaxis_tickprefix="Rs ",
-                          legend=dict(orientation="h", y=1.12))
+                          xaxis_title="Date", yaxis_title="Value (Rs)", legend=dict(orientation="h", y=1.12))
         st.plotly_chart(fig, width="stretch", key="lib_history")
 
 # ================================================================ 3. trade journal
@@ -295,7 +299,8 @@ with journal_tab:
                 fig = go.Figure(go.Bar(x=stats.iloc[:, 0], y=stats["Net P&L"],
                                        marker_color=[charts.PROFIT_COLOR if v > 0 else charts.LOSS_COLOR
                                                      for v in stats["Net P&L"]]))
-                fig.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10), yaxis_tickprefix="Rs ")
+                fig.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10), yaxis_tickprefix="Rs ",
+                                  xaxis_title=stats.columns[0], yaxis_title="Net P&L (Rs)")
                 st.plotly_chart(fig, width="stretch", key=f"j_stats_{by}")
                 st.dataframe(stats, hide_index=True, width="stretch")
 

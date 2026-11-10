@@ -1,4 +1,7 @@
 """Small building blocks shared by the dashboard pages."""
+import hmac
+import time
+
 import streamlit as st
 
 from marketlens import config
@@ -10,6 +13,57 @@ from marketlens.costs import (BROKERAGE_CAP_PCT, BROKERAGE_PER_ORDER_RS, DELIVER
 def historical_note():
     """Show the learning disclaimer (requirement NFR-13)."""
     st.caption("Historical analysis for learning, not a live trading recommendation.")
+
+
+# A short "what this page does / how to read it" note under a page title (two lines, joined by a line break).
+def help_note(text: str):
+    """Example: help_note("What this page does: ...\\nHow to read it: ...")"""
+    st.info(text.strip().replace("\n", "  \n"), icon="ℹ️")      # two spaces + line break = a new line in Markdown
+
+
+# ---------------------------------------------------------------- dashboard password
+
+MAX_TRIES = 5                    # wrong passwords in a row before a pause
+PAUSE_SECONDS = 30
+
+
+# True when the typed password matches DASHBOARD_PASSWORD (compared in constant time).
+def password_ok(typed: str, expected: str | None = None) -> bool:
+    expected = config.DASHBOARD_PASSWORD if expected is None else expected
+    return hmac.compare_digest((typed or "").encode("utf-8"), (expected or "").encode("utf-8"))
+
+
+# With DASHBOARD_PASSWORD set: show a password box and stop until it is right; add Logout to the sidebar.
+def require_password() -> bool:
+    """Returns True when the app may be shown. The login is remembered in st.session_state (this browser tab)."""
+    if not config.is_set(config.DASHBOARD_PASSWORD):
+        return True
+    state = st.session_state
+    if state.get("logged_in"):
+        if st.sidebar.button("🔒 Logout", key="logout"):
+            state.clear()
+            st.rerun()
+        return True
+    st.title("🔒 MarketLens")
+    wait = state.get("login_wait_until", 0) - time.time()
+    if wait > 0:
+        st.error(f"Too many wrong passwords. Try again in {wait:.0f} seconds.")
+        st.stop()
+    with st.form("login"):
+        typed = st.text_input("Password", type="password", key="login_password")
+        sent = st.form_submit_button("Log in", type="primary")
+    if sent:
+        if password_ok(typed):
+            state["logged_in"], state["login_tries"] = True, 0
+            state.pop("login_password", None)
+            st.rerun()
+        state["login_tries"] = state.get("login_tries", 0) + 1
+        if state["login_tries"] >= MAX_TRIES:
+            state["login_wait_until"], state["login_tries"] = time.time() + PAUSE_SECONDS, 0
+        st.error("Wrong password.")
+    st.caption("The password is DASHBOARD_PASSWORD in .env.")
+    st.stop()
+    return False
 
 
 # Show a placeholder box for a module that is designed but not built yet.
@@ -63,7 +117,8 @@ def cost_settings_inputs(key: str) -> CostSettings:
         s1, s2, s3 = st.columns(3)
         slip_type = s1.radio("Slippage in", ["pct", "points"], horizontal=True, key=f"{key}_sliptype",
                              format_func=lambda v: "% of price" if v == "pct" else "Rs points")
-        slip_value = s2.number_input("Slippage", min_value=0.0, value=0.0, step=0.01,
+        slip_value = s2.number_input("Slippage (% of price)" if slip_type == "pct" else "Slippage (Rs per unit)",
+                                     min_value=0.0, value=0.0, step=0.01,
                                      key=f"{key}_slip")
         taxes = s3.checkbox("Include taxes (STT, exchange, SEBI, stamp, GST)", value=True,
                             key=f"{key}_tax")

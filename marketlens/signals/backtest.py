@@ -192,6 +192,10 @@ def signal_chart(strategy: SignalStrategy, candles: pd.DataFrame, markers: pd.Da
                           row=1, col=1)
     fig.update_layout(height=560 if rows == 2 else 460, xaxis_rangeslider_visible=False, legend=dict(orientation="h"),
                       margin=dict(l=10, r=10, t=30, b=10))
+    fig.update_yaxes(title_text="Price (Rs)", row=1, col=1)
+    if rows == 2:
+        fig.update_yaxes(title_text="Indicator value", row=2, col=1)
+    fig.update_xaxes(title_text="Time (IST)" if strategy.timeframe != "1 day" else "Date", row=rows, col=1)
     return fig
 
 

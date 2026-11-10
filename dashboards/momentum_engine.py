@@ -7,9 +7,13 @@ Library (module 10) on the web page. The engine is marketlens/momentum/portfolio
 import streamlit as st
 
 from marketlens import config
-from marketlens.ui import historical_note
+from marketlens.ui import help_note, historical_note
 
 st.title("🚀 Momentum Engine Backtest vs Nifty")
+help_note("What this page does: links to the Momentum Engine in the web app (top-N Nifty 50 / 200 stocks by "
+          "momentum, rebalanced monthly or weekly, against Nifty 50).\n"
+          "How to read it: lookbacks are in trading days (63 ≈ 3 months), weights in %, values in Rs after "
+          "costs and tax.")
 address = f"{config.FRONTEND_URL}/momentum-engine"
 
 opened = st.session_state.get("handoff") or {}

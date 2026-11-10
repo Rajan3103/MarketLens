@@ -15,7 +15,7 @@ from marketlens.backtest.report import export_excel, file_stem
 from marketlens.costs import CostSettings
 from marketlens.momentum import etf_bt as eb
 from marketlens.momentum.ranking import METHODS
-from marketlens.ui import historical_note
+from marketlens.ui import help_note, historical_note
 
 FUTURE_NOTE = ("Past results depend on the period and the settings chosen. They are not a promise of "
                "future returns.")
@@ -52,6 +52,10 @@ def pct(value) -> str:
 
 
 st.title("🧺 ETF Momentum Portfolio")
+help_note("What this page does: holds the top K ETFs by momentum, rebalanced monthly or weekly, after costs and "
+          "Indian capital gains tax, against Nifty 50; also checks a claimed return and sweeps the settings.\n"
+          "How to read it: lookbacks in trading days, returns and CAGR in % a year, values in Rs; signals at a "
+          "month's (week's) last close, trades at the next day's close.")
 st.info(f"**{FUTURE_NOTE}** Historical analysis for learning, not a live trading recommendation.")
 data, problem = get_data()
 if data.is_demo:
@@ -114,14 +118,14 @@ if data.fixes:
 
 st.subheader("2. Strategy")
 c = st.columns(4)
-top_k = c[0].slider("Hold the top K ETFs", 1, 5, form.top_k, key=f"etf_k_{v}")
+top_k = c[0].slider("Hold the top K (ETFs)", 1, 5, form.top_k, key=f"etf_k_{v}")
 rebalance = c[1].radio("Rebalance", eb.REBALANCE, index=eb.REBALANCE.index(form.rebalance), horizontal=True,
                        key=f"etf_reb_{v}", format_func=str.capitalize,
                        help="Ranked at the close of the last trading day of the month / week; traded at the next close.")
 method = c[2].selectbox("Score", METHODS, index=METHODS.index(form.method), format_func=METHOD_LABELS.get,
                         key=f"etf_method_{v}",
                         help="Plain return; return divided by volatility; or Sharpe-style average / volatility")
-skip = c[3].number_input("Skip the latest days", 0, 63, int(form.skip_recent), key=f"etf_skip_{v}",
+skip = c[3].number_input("Skip the latest (trading days)", 0, 63, int(form.skip_recent), key=f"etf_skip_{v}",
                          help="Leave out the most recent N trading days from every lookback (21 = one month)")
 saved_weights = dict(zip(form.lookbacks, form.weights))
 lookbacks = st.multiselect("Lookbacks", list(eb.LOOKBACK_CHOICES),
@@ -131,7 +135,7 @@ weights = []
 if lookbacks:
     wc = st.columns(len(lookbacks))
     for col, days in zip(wc, sorted(lookbacks)):
-        weights.append(col.number_input(f"Weight of {eb.LOOKBACK_CHOICES[days]}", 0.0, 10.0,
+        weights.append(col.number_input(f"Weight of {eb.LOOKBACK_CHOICES[days]} (relative)", 0.0, 10.0,
                                         float(saved_weights.get(days, 1.0)), 0.5, key=f"etf_w_{days}_{v}"))
 a = st.columns(4)
 abs_filter = a[0].checkbox("Absolute momentum filter", form.abs_filter, key=f"etf_abs_{v}",
@@ -154,7 +158,7 @@ liquid_yield = lq[1].number_input("Yield (% a year)", 0.0, 15.0, float(form.liqu
                                   key=f"etf_lq_yield_{v}", disabled=safe != eb.LIQUID or liquid_source != "yield")
 lq[2].caption("LIQUIDBEES pays its interest as daily extra units, which Yahoo's prices only partly show "
               "(they stay flat at Rs 1,000 since Dec-2025). 5% is close to its long-run return after fees.")
-ma_days = lq[3].number_input("Also above N-day average (0 = off)", 0, 400, int(form.ma_days), 50, key=f"etf_ma_{v}")
+ma_days = lq[3].number_input("Also above N-day average (days, 0 = off)", 0, 400, int(form.ma_days), 50, key=f"etf_ma_{v}")
 d = st.columns(3)
 start = d[0].date_input("Start date", inside(form.start), min_value=first_day, max_value=data.last_day,
                         key=f"etf_start_{v}")
@@ -260,7 +264,8 @@ with bt_tab:
         if len(years.columns) > 2:
             fig.add_bar(x=years["Year"], y=years.iloc[:, 2], name="Nifty 50", marker_color=charts.BENCHMARK_COLOR)
         fig.update_layout(barmode="group", height=330, margin=dict(l=10, r=10, t=40, b=10), title="Yearly returns",
-                          yaxis_ticksuffix="%", legend=dict(orientation="h", y=1.1))
+                          yaxis_ticksuffix="%", xaxis_title="Year", yaxis_title="Return (%)",
+                          legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig, width="stretch", key="etf_years")
         st.dataframe(years, hide_index=True, width="stretch")
         st.caption("The first and last years are part-years (from the start date / to the last stored day).")
@@ -326,6 +331,7 @@ with claim_tab:
         fig = go.Figure(go.Bar(x=table["Total return %"], y=table["Line"], orientation="h", marker_color=colors,
                                text=table["Total return %"].map(lambda v: f"{v:,.1f}%"), textposition="auto"))
         fig.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10), xaxis_ticksuffix="%",
+                          xaxis_title="Total return (%)",
                           yaxis=dict(autorange="reversed"), title="Total return over the period")
         st.plotly_chart(fig, width="stretch", key="etf_claim_chart")
         st.markdown(
@@ -357,7 +363,8 @@ with sweep_tab:
                                    colorscale="Blues", text=grid.map(lambda v: f"{v:.1f}%").values,
                                    texttemplate="%{text}", colorbar=dict(title="CAGR %"),
                                    hovertemplate="%{y}, %{x}: CAGR %{z:.2f}%<extra></extra>"))
-        fig.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10), title="CAGR % after costs and tax")
+        fig.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10), title="CAGR % after costs and tax",
+                          xaxis_title="Top K (ETFs held)", yaxis_title="Lookbacks")
         st.plotly_chart(fig, width="stretch", key="etf_sweep_chart")
         spread = sweep["CAGR %"].max() - sweep["CAGR %"].min()
         st.markdown(f"CAGR ranges from **{sweep['CAGR %'].min():.1f}%** to **{sweep['CAGR %'].max():.1f}%** "

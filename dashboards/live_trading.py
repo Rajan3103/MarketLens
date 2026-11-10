@@ -16,13 +16,17 @@ from marketlens.trading import forward as fw
 from marketlens.trading import live_runner as lr
 from marketlens.trading import monitor as mon
 from marketlens.trading.order_service import OrderService, market_is_open
-from marketlens.ui import historical_note
+from marketlens.ui import help_note, historical_note
 
 LIVE = config.TRADING_MODE == "live"
 REFRESH = 10 if market_is_open(dt.datetime.now(IST)) else None      # auto refresh only in market hours
 STATUS_ICONS = {"running": "🟢", "paused": "⏸️", "stopping": "🟠", "stopped": "⏹️"}
 
 st.title("🤖 Live Algo Trading & Bot Monitor")
+help_note("What this page does: deploys strategies from the library, watches them run (paper or live by "
+          "TRADING_MODE) and stops everything when needed.\n"
+          "How to read it: P&L and loss limits in Rs (bars show % of the limit used), times IST, quantities in "
+          "lots × lot size; live needs a saved backtest and 10 forward-test days.")
 
 
 # ---------------------------------------------------------------- banner and status cards
@@ -145,7 +149,7 @@ with deploy_tab:
                                              "Paper deployment is allowed now; before LIVE it still needs: ")
                                             + "; ".join(check["missing"]) + ".")
         f = st.columns(4)
-        multiplier = f[0].number_input("Lots multiplier", 1, 50, 1, key="lt_mult",
+        multiplier = f[0].number_input("Lots multiplier (× every leg)", 1, 50, 1, key="lt_mult",
                                        help="Every leg's lots (or the indicator quantity) times this number.")
         max_loss = f[1].number_input("Max loss for this strategy today (Rs, 0 = none)", 0.0, 1e8,
                                      float(config.MAX_STRATEGY_LOSS_RS), step=500.0, key="lt_max_loss")

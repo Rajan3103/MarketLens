@@ -332,5 +332,7 @@ def indicator_chart(df: pd.DataFrame, fast: int = 20, slow: int = 50, show_ma200
     fig.update_layout(title=title or None, height=height, xaxis_rangeslider_visible=False, hovermode="x unified",
                       legend=dict(orientation="h", y=1.04), margin=dict(l=10, r=10, t=60 if title else 30, b=10))
     fig.update_yaxes(title_text="Price (Rs)", row=1, col=1)
-    fig.update_yaxes(range=[0, 100], row=2, col=1)
+    fig.update_yaxes(range=[0, 100], title_text="RSI (0-100)", row=2, col=1)
+    fig.update_yaxes(title_text="Volume (shares)", row=3, col=1)
+    fig.update_xaxes(title_text="Date", row=3, col=1)
     return fig

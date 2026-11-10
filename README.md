@@ -241,6 +241,7 @@ and is never uploaded. Restart the app after changing it.
 | `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
 | `API_PORT` | Port of the backend API, which also receives the webhook alerts (default 8000; the old name `WEBHOOK_PORT` still works) | 8000 |
 | `FRONTEND_URL` | Address of the web app; Streamlit pages link to it (page 8 opens library strategies there) | http://localhost:3000 |
+| `DASHBOARD_PASSWORD` | A password box before the Streamlit app's menu (checked with `hmac.compare_digest`; Logout in the sidebar; 5 wrong tries = 30 s pause). Set it before running on a server | No password; Settings & Status warns |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Webhook alerts (module 7), the 08:45 login reminder, order and kill-switch messages, Confirm / Reject buttons for live orders; the bot later (module 12) | No messages are sent (they are still saved in `notifications`); confirm live orders on the command line |
 
 **Settings & Status** shows which keys are still missing.
@@ -779,7 +780,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **918 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **936 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and

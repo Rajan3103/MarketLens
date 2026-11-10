@@ -10,9 +10,13 @@ import streamlit as st
 from marketlens import config
 from marketlens.alerts import price_alerts as pa
 from marketlens.alerts import telegram
-from marketlens.ui import key_notice
+from marketlens.ui import help_note, key_notice
 
 st.title("💬 Telegram Bot Control Panel")
+help_note("What this page does: Telegram bot status and a test message, which messages are sent, price alerts "
+          "and the history of every message.\n"
+          "How to read it: alert levels in Rs (price), % (change today), contracts (OI) or a ratio (PCR); "
+          "statuses: sent, failed (with the reason) or skipped (keys not set / switched off).")
 key_notice("Telegram", ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
            "Messages are not sent; they are still saved below as 'skipped'.")
 
@@ -89,7 +93,7 @@ with alerts_tab:
         length = g[1].number_input("Length (days)", 1, 400, 14, key="pa_length")
         op = g[2].selectbox("Is", [o for o in OPERATORS], format_func=OPERATORS.get, index=list(OPERATORS).index("<"),
                             key="pa_op")
-        value = g[3].number_input("Value", value=30.0, key="pa_value")
+        value = g[3].number_input("Value (in the indicator's own unit)", value=30.0, key="pa_value")
         rule = {"conditions": [{"left": {"kind": kind, "length": int(length)}, "op": op,
                                 "right": {"kind": "number", "value": float(value)}}], "join": "AND"}
         st.caption("Checked on the last finished daily candle (yfinance).")

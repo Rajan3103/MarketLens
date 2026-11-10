@@ -16,7 +16,7 @@ from marketlens.backtest.ui import show_backtest
 from marketlens.signals import backtest as sb
 from marketlens.signals import pine
 from marketlens.signals import rules as sr
-from marketlens.ui import cost_settings_inputs, historical_note
+from marketlens.ui import cost_settings_inputs, help_note, historical_note
 from marketlens.webhook import payload as wh
 
 FIELD_LABELS = {"length": "Length", "mult": "Mult", "fast": "Fast", "slow": "Slow", "signal": "Signal", "value": "Value"}
@@ -113,6 +113,10 @@ def conditions_editor(which: str, title: str, join_key: str, join_default: str) 
 # ---------------------------------------------------------------- page
 
 st.title("📐 Signals & Indicator Strategy Builder")
+help_note("What this page does: builds indicator rules without code (AND / OR), backtests them, scans many "
+          "stocks and exports TradingView Pine Script with webhook alerts.\n"
+          "How to read it: indicator lengths are in candles of the chosen timeframe (minutes or days), SL / "
+          "target in % of the entry price, P&L in Rs after costs; ▲ entry, ✕ exit.")
 st.caption("Rules from indicators, without code: backtest them, scan for them, export them to TradingView.")
 if "sb_form" not in st.session_state:
     load_into_page()
@@ -267,8 +271,8 @@ with pine_tab:
             "tick **Webhook URL** and paste the address from the Webhook alerts tab. Keep the message as is.")
         with st.expander("Quick template: moving-average crossover"):
             m1, m2 = st.columns(2)
-            fast = m1.number_input("Fast moving average", 2, 400, 20, key="pine_fast")
-            slow = m2.number_input("Slow moving average", 3, 800, 50, key="pine_slow")
+            fast = m1.number_input("Fast moving average (days)", 2, 400, 20, key="pine_fast")
+            slow = m2.number_input("Slow moving average (days)", 3, 800, 50, key="pine_slow")
             template = pine.ma_crossover_script(fast, slow)
             st.code(template, language="javascript")
             st.download_button("⬇️ Download .pine", template, file_name=f"ma_crossover_{fast}_{slow}.pine",

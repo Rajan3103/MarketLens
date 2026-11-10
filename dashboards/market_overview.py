@@ -16,9 +16,14 @@ from marketlens.data import get_history
 from marketlens.overview import (CHART_PERIODS, SOURCE_YF, WINDOWS, breadth, breadth_chart, change_colour,
                                  get_sector_heatmap, get_snapshot, has_no_volume, indicator_chart, indicator_table,
                                  market_is_open, market_status, sector_chart, top_movers)
-from marketlens.ui import historical_note
+from marketlens.ui import help_note, historical_note
 
 st.title("📊 Live Market Overview")
+help_note("What this page does: index cards, Nifty 50 top movers and breadth, a sector heatmap and a daily "
+          "price chart with moving averages, RSI and volume (refreshes every 60 seconds in market hours).\n"
+          "How to read it: prices in Rs or index points, changes in % from yesterday's close; on the chart a "
+          "green ▲ is a bullish crossover (fast average above slow), a red ▼ a bearish one; averages are in "
+          "trading days.")
 
 
 # Fetch the overview at most once every 55 seconds (the section refreshes every 60).

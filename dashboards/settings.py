@@ -23,6 +23,11 @@ def cached_db_status() -> tuple[bool, str]:
     return connection_status()
 
 
+if not config.is_set(config.DASHBOARD_PASSWORD):
+    st.warning("🔓 DASHBOARD_PASSWORD is empty: anyone who can open this app can see your data and press its "
+               "buttons (kill switch, deploy, square off). Set DASHBOARD_PASSWORD in .env and restart the app, "
+               "especially before running it on a server.")
+
 # ---- 1. Trading mode ----
 st.subheader("Trading mode")
 trading_mode_banner()
