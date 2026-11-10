@@ -165,6 +165,20 @@ def test_momentum_tracker_benchmark(data):
     assert list(table.columns) == ["Measure", "Strategy", pb.NIFTY_NAME, name]
 
 
+# NIFTYBEES (dividends included, like the stocks) is the main benchmark when it covers the period; the ^NSEI price
+# index is kept as a second line. A NIFTYBEES series that starts late is not used as the main line.
+def test_niftybees_is_the_fair_benchmark(data):
+    with_etf = copy.deepcopy(data)
+    with_etf.nifty_etf = with_etf.index_close * 1.0004 ** np.arange(len(with_etf.index_close)) / 100   # + dividends
+    r = run_momentum_backtest(settings(), data=with_etf)
+    assert r.benchmark_name == pb.NIFTY_ETF_NAME and list(r.extras["benchmarks"])[:2] == [pb.NIFTY_ETF_NAME, pb.NIFTY_NAME]
+    assert r.benchmark.iloc[0] == pytest.approx(r.capital) and r.benchmark.iloc[-1] > r.extras["benchmarks"][pb.NIFTY_NAME].iloc[-1]
+    late = copy.deepcopy(data)
+    late.nifty_etf = late.index_close[late.index_close.index >= "2020-06-01"]
+    r2 = run_momentum_backtest(settings(), data=late)
+    assert r2.benchmark_name == pb.NIFTY_NAME and pb.NIFTY_ETF_NAME not in r2.extras["benchmarks"]
+
+
 # Settings survive the trip to JSON and back; bad ones give a clear message.
 def test_settings_round_trip_and_checks():
     s = settings(weighting="inverse_vol", hold_rank=8, end=None)
@@ -228,7 +242,7 @@ def test_history_warning(stored):
     early = settings(top_n=2, hold_rank=3, start=dt.date(2017, 3, 1),
                      filters=MomentumSettings(lookbacks=[126], weights=[1], skip_recent=0, ma_days=0, index_filter=False))
     text = pb.history_warning(early, url=stored)
-    assert "stored only from 02-Jan-2017" in text and "Choose a start of" in text
+    assert "stored only from 02-Jan-2017" in text and "choose a start of" in text and "Download missing prices" in text
     result = run_momentum_backtest(early, url=stored)
     assert result.extras["first_invested"] > dt.date(2017, 6, 1)
     assert any("The first stocks were bought on" in n for n in result.extras["notes"])

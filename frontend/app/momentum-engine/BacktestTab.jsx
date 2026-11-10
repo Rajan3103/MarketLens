@@ -107,7 +107,7 @@ export default function BacktestTab({ settings, setSettings, options, state, set
     if (job.status !== "done") return;
     try {
       const answer = await apiPost("momentum/data-check", { settings });
-      setState((s) => ({ ...s, syncJobId: null, check: answer.ok ? null : answer }));
+      setState((s) => ({ ...s, syncJobId: null, check: answer.ok ? null : answer, warning: answer.warning }));
     } catch (err) {
       setProblem(err);
     }
@@ -147,8 +147,18 @@ export default function BacktestTab({ settings, setSettings, options, state, set
       )}
 
       {warning && (
-        <p role="note" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900
-          dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">⚠️ {warning}</p>
+        <div role="note" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900
+          dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <p>⚠️ {warning}</p>
+          {!(check && !check.ok) && (
+            <>
+              <button onClick={download} disabled={Boolean(syncJobId)} className={SECONDARY}>
+                ⬇️ Download missing prices (older history too)
+              </button>
+              {syncJobId && <ProgressBar jobId={syncJobId} onDone={syncDone} />}
+            </>
+          )}
+        </div>
       )}
       {jobId && <ProgressBar key={jobId} jobId={jobId} onDone={backtestDone} />}
       {running && <p className="text-xs text-slate-500">You can switch tabs; the backtest keeps running on the server.</p>}

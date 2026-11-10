@@ -13,6 +13,10 @@ logs/
 
 # Local downloads (the database itself lives in PostgreSQL, not in this folder)
 data/*.csv
+# the scheduler's NSE holiday list is part of the code
+!data/nse_holidays.csv
+# pg_dump backups (they contain all your data)
+data/backups/
 data/downloads/
 
 # Dhan's instrument list (re-downloaded once a day)

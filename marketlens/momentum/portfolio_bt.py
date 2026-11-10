@@ -40,7 +40,9 @@ REBALANCE = ("monthly", "weekly")
 WEIGHTINGS = ("equal", "inverse_vol")
 LIQUID = "LIQUIDBEES"
 LIQUID_START_PRICE = 1000.0
-NIFTY_NAME = "Nifty 50 buy-and-hold (^NSEI, without dividends)"
+NIFTY_ETF = "NIFTYBEES"             # a Nifty 50 ETF: its adjusted closes include the dividends, like our stocks'
+NIFTY_ETF_NAME = "Nifty 50 buy-and-hold (NIFTYBEES, with dividends)"
+NIFTY_NAME = "Nifty 50 index (^NSEI, price only, no dividends)"
 # ETFs that follow the Nifty 200 Momentum 30 index (Yahoo has no history of the index itself): the first stored one is used
 MOMENTUM_TRACKERS = {"MOMENTUM": "Nifty 200 Momentum 30 (MOMENTUM ETF)",
                      "MOM30IETF": "Nifty 200 Momentum 30 (MOM30IETF ETF)"}
@@ -139,9 +141,11 @@ class StockData:
     """Prices for one backtest: rows = dates, columns = symbols."""
     close: pd.DataFrame
     volume: pd.DataFrame | None = None
-    index_close: pd.Series | None = None          # Nifty 50 (benchmark and index filter)
+    index_close: pd.Series | None = None          # Nifty 50 index (index filter; price-only benchmark line)
     trackers: dict = field(default_factory=dict)   # Nifty 200 Momentum 30 ETF name -> closes
     is_demo: bool = False
+    nifty_etf: pd.Series | None = None             # NIFTYBEES (the fair benchmark: dividends included)
+    fixes: list = field(default_factory=list)      # Yahoo price errors repaired before the backtest (repair_data)
 
 
 class MissingPricesError(ValueError):
@@ -205,8 +209,8 @@ def history_warning(settings: StockMomentumSettings, url: str | None = None) -> 
     earliest = settings.start + (typical - needed_from)
     return (f"Most stocks are stored only from {typical:%d-%b-%Y}, but a start on {settings.start:%d-%b-%Y} needs "
             f"prices from {needed_from:%d-%b-%Y} for the longest lookback and averages. Until about "
-            f"{earliest:%d-%b-%Y} few stocks can be ranked, so the money waits in the safe asset. Choose a start "
-            f"of {earliest:%d-%b-%Y} or later for a fair test.")
+            f"{earliest:%d-%b-%Y} few stocks can be ranked, so the money waits in the safe asset. Press "
+            f"'Download missing prices' to add the older history, or choose a start of {earliest:%d-%b-%Y} or later.")
 
 
 # Read the prices from PostgreSQL. Raises MissingPricesError unless allow_missing.
@@ -225,11 +229,48 @@ def load_stock_data(settings: StockMomentumSettings, url: str | None = None, all
     if index.empty and settings.filters.index_filter:
         raise MissingPricesError([{"symbol": NIFTY_INDEX, "problem": "nothing stored (needed for the index filter)"}])
     trackers = load_prices(list(MOMENTUM_TRACKERS), settings.start, end, url=url)
-    return StockData(close, volume, index[NIFTY_INDEX] if not index.empty else None,
-                     {MOMENTUM_TRACKERS[s]: trackers[s] for s in trackers.columns})
+    etf = load_prices([NIFTY_ETF], settings.start, end, url=url)
+    data = StockData(close, volume, index[NIFTY_INDEX] if not index.empty else None,
+                     trackers={MOMENTUM_TRACKERS[s]: trackers[s] for s in trackers.columns},
+                     nifty_etf=etf[NIFTY_ETF] if not etf.empty else None)
+    return repair_data(data)
 
 
-# Download what is missing (yfinance -> daily_prices): stocks, Nifty 50 and the Momentum 30 ETFs.
+# Fix Yahoo's known price errors before ranking: power-of-10 errors (e.g. NIFTYBEES around its Dec-2019 1:10 split)
+# in every series, and one-day bad prints in the index and ETF lines (e.g. ^NSEI in April 2020). Kept in data.fixes.
+def repair_data(data: StockData) -> StockData:
+    from marketlens.ingest.clean import remove_spikes, repair_scale_errors
+    data.close, _, fixes = repair_scale_errors(data.close)
+    data.fixes = [{**f, "kind": "x10 / x100 error"} for f in fixes]
+    traded = data.close.dropna(how="all").index         # days NSE was open (the stocks have prices)
+
+    # One index / ETF series: only NSE trading days (Yahoo has ^NSEI rows with wrong values on holidays such as
+    # 26-Jan), then both repairs; the fixes are remembered with its name.
+    def clean(series: pd.Series | None, name: str) -> pd.Series | None:
+        if series is None or series.dropna().empty:
+            return series
+        closed = series.index[~series.index.isin(traded) & (series.index <= traded[-1])]
+        if len(closed):
+            series = series.drop(closed)
+            data.fixes.append({"symbol": name, "date": closed[0].date(), "factor": None,
+                               "kind": f"{len(closed)} row(s) on days NSE was closed dropped"})
+        scaled, _, scale_fixes = repair_scale_errors(series.to_frame(name))
+        smooth, spike_fixes = remove_spikes(scaled[name])
+        data.fixes += [{**f, "kind": "x10 / x100 error"} for f in scale_fixes]
+        data.fixes += [{"symbol": name, "date": f["date"], "factor": None, "kind": f"bad print {f['bad']:,.2f}"}
+                       for f in spike_fixes]
+        return smooth
+
+    data.index_close = clean(data.index_close, NIFTY_INDEX)
+    data.nifty_etf = clean(data.nifty_etf, NIFTY_ETF)
+    data.trackers = {name: clean(series, name) for name, series in data.trackers.items()}
+    if data.fixes:
+        log.info("Momentum data: %d price error(s) repaired: %s", len(data.fixes), data.fixes[:10])
+    return data
+
+
+# Download what is missing (yfinance -> daily_prices): stocks, Nifty 50, NIFTYBEES and the Momentum 30 ETFs,
+# including the OLDER history a backtest needs (backfill) when the stored history starts too late.
 def sync_universe_prices(settings: StockMomentumSettings, progress=None, url: str | None = None) -> dict:
     """progress(percent, message) like a background job's. Returns a short summary."""
     from marketlens.ingest.prices import sync_prices
@@ -237,8 +278,9 @@ def sync_universe_prices(settings: StockMomentumSettings, progress=None, url: st
     universe = universe_table(settings.universe)
     steps = [("stocks", settings.symbols(), "EQUITY", dict(zip(universe["symbol"], universe["name"]))),
              ("Nifty 50", [NIFTY_INDEX], "INDEX", {NIFTY_INDEX: "Nifty 50"}),
+             ("NIFTYBEES", [NIFTY_ETF], "ETF", {NIFTY_ETF: "Nippon India ETF Nifty 50 BeES"}),
              ("Momentum 30 ETFs", list(MOMENTUM_TRACKERS), "ETF", MOMENTUM_TRACKERS)]
-    summary = {"rows": 0, "failed": [], "up_to_date": 0}
+    summary = {"rows": 0, "failed": [], "up_to_date": 0, "older_history": 0}
     for n, (label, symbols, kind, names) in enumerate(steps):
         base = 100 * n / len(steps)
 
@@ -248,8 +290,10 @@ def sync_universe_prices(settings: StockMomentumSettings, progress=None, url: st
                 progress(base + 100 / len(steps) * done / max(total, 1), f"Downloading {label}: {text}")
         if progress:
             progress(base, f"Downloading {label}")
-        result = sync_prices(symbols, start, end, instrument_type=kind, names=names, url=url, progress=step)
+        result = sync_prices(symbols, start, end, instrument_type=kind, names=names, url=url, progress=step,
+                             backfill=True)
         summary["rows"] += result.rows_upserted
+        summary["older_history"] += len(result.backfilled)
         summary["failed"] += list(getattr(result, "failed", []) or [])
         summary["up_to_date"] += len(result.up_to_date)
     return summary
@@ -384,12 +428,13 @@ def run_momentum_backtest(settings: StockMomentumSettings, progress=None, data: 
     metrics["total_pnl"] = to_paise(equity.iloc[-1] - settings.capital)
     metrics["return_pct"] = metrics["total_return_pct"]
     benchmarks = _benchmarks(data, equity, settings.capital, start, last)
-    nifty = benchmarks.get(NIFTY_NAME)
+    main_name = NIFTY_ETF_NAME if NIFTY_ETF_NAME in benchmarks else NIFTY_NAME
+    nifty = benchmarks.get(main_name)
     weighting = "inverse-volatility" if settings.weighting == "inverse_vol" else "equal"
     result = BacktestResult(
         name=name or f"Momentum: top {settings.top_n} of {settings.universe}, {settings.rebalance}, {weighting} weights",
         trades=book.trades, capital=settings.capital, start=start, end=last, daily_pnl=daily, equity=equity,
-        metrics=metrics, benchmark=nifty, benchmark_name=NIFTY_NAME if nifty is not None else "",
+        metrics=metrics, benchmark=nifty, benchmark_name=main_name if nifty is not None else "",
         params=settings.to_params(), is_demo=data.is_demo)
     rebalances = pd.DataFrame(log_rows)
     turnover = sum(t.qty * (t.entry_price + t.exit_price) for t in book.trades)
@@ -400,15 +445,20 @@ def run_momentum_backtest(settings: StockMomentumSettings, progress=None, data: 
         orders=book.orders, turnover=to_paise(turnover), final_value=float(equity.iloc[-1]),
         liquidation=liquidation_value(book, marks.loc[window[-1]], last),
         days_in_cash=int((rebalances["market_ok"] == False).sum()) if len(rebalances) else 0,   # noqa: E712
-        first_invested=first_invested, notes=_notes(settings, first_invested))
+        first_invested=first_invested, data_fixes=list(data.fixes),
+        notes=_notes(settings, first_invested, data.fixes))
     if progress:
         progress(99, "Working out the results")
     return result
 
 
 # Notes under the results: survivorship bias, a late first investment, and the learning note.
-def _notes(settings: StockMomentumSettings, first_invested: dt.date | None) -> list[str]:
+def _notes(settings: StockMomentumSettings, first_invested: dt.date | None, fixes: list | None = None) -> list[str]:
     notes = [SURVIVORSHIP_NOTE]
+    if fixes:
+        shown = ", ".join(f"{f['symbol']} {f['date']:%d-%b-%Y}" for f in fixes[:6])
+        notes.append(f"{len(fixes)} price error(s) in Yahoo's data were repaired before the test ({shown}"
+                     + (", ..." if len(fixes) > 6 else "") + ").")
     if first_invested is None:
         notes.append("No stock was ever bought: none passed the filters (or Nifty 50 stayed below its average).")
     elif first_invested > settings.start + dt.timedelta(days=45):
@@ -439,10 +489,14 @@ def _holdings_rows(book: Portfolio, marks: pd.Series, day: dt.date, signal_day: 
     return rows
 
 
-# Nifty 50 rebased to the capital on day one; a Momentum 30 ETF (listed later) from its first day,
+# Nifty 50 rebased to the capital on day one: NIFTYBEES (with dividends, the fair comparison; used only when it
+# covers the whole period) and the ^NSEI price index. A Momentum 30 ETF (listed later) from its first day,
 # starting at the strategy's value that day so the two lines are easy to compare from then on.
 def _benchmarks(data: StockData, equity: pd.Series, capital: float, start: dt.date, end: dt.date) -> dict:
     out = {}
+    etf = rebase(data.nifty_etf, capital, start, end)
+    if etf is not None and etf.index[0] <= start + dt.timedelta(days=7):
+        out[NIFTY_ETF_NAME] = etf.round(2)
     nifty = rebase(data.index_close, capital, start, end)
     if nifty is not None:
         out[NIFTY_NAME] = nifty

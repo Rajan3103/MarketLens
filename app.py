@@ -3,13 +3,18 @@
 Run it from the MarketLens folder with:
     streamlit run app.py
 
-This file only builds the sidebar menu. Each dashboard lives in its own
-file inside the "dashboards" folder.
+This file asks for the password (when DASHBOARD_PASSWORD is set in .env) and builds the
+sidebar menu. Each dashboard lives in its own file inside the "dashboards" folder.
 """
 import streamlit as st
 
+from marketlens.ui import require_password
+
 # Page title and wide layout for charts. Must be the first Streamlit call.
 st.set_page_config(page_title="MarketLens", page_icon="📈", layout="wide")
+
+# With DASHBOARD_PASSWORD set in .env: a password box first (nothing else is shown until it is right)
+require_password()
 
 # Home, Settings and the 12 modules, grouped into sections for the sidebar menu.
 # st.Page(file, title=..., icon=...) adds one item to the menu.

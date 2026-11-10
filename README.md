@@ -43,7 +43,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
 | | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page, in Streamlit and the **web app** (`/live-trading`: deploy, Start / Pause / Stop, status cards, orders, positions, Confirm / Reject, loss limits, kill switch, error log) | ✅ |
-| | 12 | Telegram Bot Control Panel | Every message saved in `notifications` (sent / failed / skipped) from orders, SL hits, kill switch, webhooks, forward tests, the live runner and errors; price alerts (price, % change, indicator rule, OI / PCR); bot commands next | 🛠️ |
+| | 12 | Telegram Bot Control Panel | Bot with commands (`/status`, `/positions`, `/orders`, `/pnl`, `/pause`, `/stop`, `/squareoff`, `/addalert` ...) and Confirm / Reject buttons, answering only your chat; every message saved (sent / failed / skipped); notification switches; price alerts (price, % change, indicator, OI / PCR); page 12 with test message, alerts and message history | ✅ |
 
 ### Highlights of the ready modules
 
@@ -72,14 +72,21 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
   Nifty 50 above its 200-day average else LIQUIDBEES or cash).
 - **No look-ahead:** ranked at a month's (week's) last close, traded at the next day's close (tested).
 - Equity-delivery costs, slippage and capital gains tax (shared with module 9 in `momentum/portfolio.py`).
-- Results against **Nifty 50 buy-and-hold** (and the Nifty 200 Momentum 30 ETF `MOMENTUM` / `MOM30IETF`
-  when stored): value and drawdown charts, CAGR / drawdown / Sharpe / Sortino table, year by year,
-  holdings, every rebalance, trades, tax by year.
+- Results against **Nifty 50 buy-and-hold with dividends (NIFTYBEES)**, the fair comparison since the
+  stocks' prices include dividends too, plus the `^NSEI` price index and the Nifty 200 Momentum 30 ETFs
+  (`MOMENTUM` / `MOM30IETF`) when stored: value and drawdown charts, CAGR / drawdown / Sharpe / Sortino
+  table, year by year, holdings, every rebalance, trades, tax by year.
+- Yahoo's price errors are repaired before ranking and listed under the results: x10 / x100 errors around
+  unit splits (NIFTYBEES, Dec-2019), `^NSEI` rows on NSE holidays (71 of them, with wrong values) and
+  one-day bad prints (e.g. `^NSEI` 11,382 on 06-Apr-2020 when it was about 8,100).
 - Tabs **Backtest** (progress bar, background job), **Current ranks** (historical model output, not
   advice) and **Rebalance history** (buys and sells on each date of a saved run).
-- Missing prices are listed with their dates and downloaded with one button (`sync_prices()`); a start
-  too early for the stored history gets a warning with the earliest fair start.
-- Fast: 10 years of 200 stocks in about 2 s (monthly) to 9 s (weekly, inverse volatility).
+- Missing prices are listed with their dates and downloaded with one button (`sync_prices()`, including
+  the older history when the stored prices start too late); a start too early for the stored history gets a
+  warning with the earliest fair start.
+- Real data, Jan-2016 to Nov-2026, Nifty 200, top 20 monthly: about 6 s; weekly with inverse-volatility
+  weights about 15-20 s. Nifty 50 in the same test: 11.4 % a year (price), 12.3 % with dividends, worst fall
+  -38 % (Mar-2020), which matches the real index.
 - Save to the Strategy Library; the library's **Open in backtester** opens it here (`?strategy=<id>`).
 
 **5. Option Simulator**
@@ -241,6 +248,7 @@ and is never uploaded. Restart the app after changing it.
 | `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
 | `API_PORT` | Port of the backend API, which also receives the webhook alerts (default 8000; the old name `WEBHOOK_PORT` still works) | 8000 |
 | `FRONTEND_URL` | Address of the web app; Streamlit pages link to it (page 8 opens library strategies there) | http://localhost:3000 |
+| `DASHBOARD_PASSWORD` | A password box before the Streamlit app's menu (checked with `hmac.compare_digest`; Logout in the sidebar; 5 wrong tries = 30 s pause). Set it before running on a server | No password; Settings & Status warns |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Webhook alerts (module 7), the 08:45 login reminder, order and kill-switch messages, Confirm / Reject buttons for live orders; the bot later (module 12) | No messages are sent (they are still saved in `notifications`); confirm live orders on the command line |
 
 **Settings & Status** shows which keys are still missing.
@@ -292,6 +300,8 @@ Migrations so far:
 | 0012 | `background_jobs`: progress and results of slow work started through the API |
 | 0013 | `portfolio_holdings` also keeps the holdings after every rebalance of a saved backtest run (`run_id`, `rebalance_date`, price, value) |
 | 0014 | `notifications`: status `skipped`, `source`, `event`; `price_alerts`: % change, indicator, OI and PCR alerts, `params`, last value |
+| 0015 | `app_settings`: settings changed from the app (not secrets), e.g. which Telegram messages are on |
+| 0016 | `scheduler_runs`: every run of a scheduled job (ok / failed / skipped and its result) |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -315,9 +325,16 @@ python -c "import datetime as d; from marketlens.ingest.prices import sync_price
 ```
 
 The Momentum Engine page can also do this for you: its **Download missing prices** button syncs the stocks,
-Nifty 50 and the Nifty 200 Momentum 30 ETFs (`MOMENTUM`, `MOM30IETF`) from the first day the settings need.
-`sync_prices` only adds days *after* what is stored, so for a backtest starting in 2016 download from 2014
-the first time (the ranking needs about 13 months of earlier prices).
+Nifty 50, NIFTYBEES and the Nifty 200 Momentum 30 ETFs (`MOMENTUM`, `MOM30IETF`) from the first day the
+settings need. A normal sync only adds days *after* what is stored; to add OLDER history (e.g. a backtest
+from 2016 needs prices from late 2014), use `--backfill`:
+
+```bash
+python scripts/sync_prices.py --universe nifty200 --years 12 --backfill
+```
+
+It downloads the days before the first stored day; if Yahoo has adjusted the prices since (split, bonus),
+the whole history of that symbol is downloaded again so old and new prices match.
 
 The first run downloads everything (about 1.5 minutes for Nifty 200 × 10 years); later runs
 only fetch the missing days. Run it after market close each day. The stock lists live in
@@ -569,6 +586,93 @@ still running when the API restarts is marked failed.
 
 ---
 
+### 16. Create your bot with @BotFather and find your chat ID
+
+The bot sends you every alert and answers commands such as `/status` or `/stop`. It only ever answers
+**your** chat (`TELEGRAM_CHAT_ID`); messages from anyone else are ignored and written to the error log.
+
+1. **Make the bot.** In Telegram, search for **@BotFather** (the one with the blue tick) and press *Start*.
+   Send `/newbot`, then a display name (e.g. *MarketLens*) and a username that ends in `bot`
+   (e.g. `marketlens_yourname_bot`).
+2. **Copy the token.** BotFather answers with a token like `1234567890:AAH...`. Put it in `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=1234567890:AAH...
+   ```
+   The token is a password: never put it in code or share it. If it leaks, send `/revoke` to BotFather and
+   put the new one in `.env`.
+3. **Say hello to your bot.** Open `t.me/<your bot's username>`, press *Start* and send any message (e.g. `hi`).
+   A bot cannot write to you before you have written to it.
+4. **Find your chat ID.** With the bot *not* running (a running bot reads the messages first), run:
+   ```bash
+   python -c "import json, urllib.request; from marketlens import config; r = json.load(urllib.request.urlopen(f'https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getUpdates')); print(sorted({u['message']['chat']['id'] for u in r['result'] if 'message' in u}))"
+   ```
+   It prints something like `[987654321]`. (Empty list? Send the bot another message and run it again.)
+   Put the number in `.env`:
+   ```
+   TELEGRAM_CHAT_ID=987654321
+   ```
+   (A group chat's ID starts with a minus sign: copy it with the minus.)
+5. **Test it.** Open page 12 (Telegram Bot Control Panel) and press **Send test message**; it should arrive at
+   once. The *Message history* tab shows every message with its status (sent / failed / skipped).
+6. **Start the bot** in its own terminal (it keeps running; Ctrl+C stops it):
+   ```bash
+   python -m marketlens.alerts.bot
+   ```
+   Send `/start` to see the commands. Page 11 and page 12 show the bot as alive while it runs. To check price
+   alerts every minute in market hours, run `python -m marketlens.alerts.price_alerts watch` in another terminal.
+
+| Command | What it does |
+| --- | --- |
+| `/status` | PAPER / LIVE, AUTO_TRADE, Dhan login, kill switch, live runner, last data update, running strategies |
+| `/positions`, `/orders`, `/pnl`, `/strategies`, `/report` | open positions; today's orders (waiting ones with ✅ Confirm / ❌ Reject); P&L against the loss limits; deployments; today's report |
+| `/pause NAME`, `/resume NAME` | pause / resume one deployed strategy (the start of its name is enough) |
+| `/alerts`, `/addalert NIFTY above 25500`, `/delalert 3` | price alerts |
+| `/stop` | kill switch ON: no new orders today (exits still go through) |
+| `/resume_all` | asks first; then kill switch OFF and paused strategies running again |
+| `/squareoff` | asks first; then closes every position, kill switch ON, every strategy stopped |
+| `/login` | today's Dhan login, with the renew steps when it is not valid |
+
+The "yes" buttons of `/resume_all` and `/squareoff` work for 2 minutes only. Which messages you get (signals,
+fills, SL hits, errors, the 15:50 daily report, webhook alerts) is chosen on page 12; live orders waiting for
+your Confirm, the kill switch and price alerts are always sent.
+
+---
+
+### 17. Run the daily jobs automatically (scheduler)
+
+One process runs every routine job at its time (India time). Start it in its own terminal and leave it running
+(on AWS later, as a service):
+
+```bash
+python -m marketlens.scheduler                      # Ctrl+C stops it
+python -m marketlens.scheduler --list               # each job, its next run and its last result
+python -m marketlens.scheduler --run sync_prices    # run one job now (add --force on a holiday)
+```
+
+| Time (IST) | Job |
+| --- | --- |
+| 08:30 Mon-Fri | refresh the Nifty 50 / 200 lists and the Dhan instrument master |
+| 08:45 Mon-Fri | check today's Dhan login; Telegram reminder when it is not valid |
+| 09:00 Mon-Fri | sync daily prices: Nifty 200 stocks, ETFs, Nifty 50, the Momentum 30 ETFs |
+| 09:20, first trading day of the month | momentum and ETF rebalance signals on Telegram (historical model output, not advice) |
+| every 5 min, 09:15-15:30 | NIFTY and BANKNIFTY option chain snapshots (needs Dhan) |
+| every 1 min, 09:15-15:30 | price alerts |
+| 15:45 Mon-Fri | today's 1-minute option data for the backtester: NIFTY, BANKNIFTY, FINNIFTY, SENSEX, ATM-10 .. ATM+10 (needs Dhan) |
+| 15:50 Mon-Fri | end-of-day report on Telegram: P&L by strategy, orders, forward test vs backtest, alerts, top movers |
+| 16:00 Mon-Fri | holdings snapshot (paper, and your Dhan account when the keys are set) |
+| Sunday 10:00 | PostgreSQL backup with `pg_dump` into `data/backups/` (the newest 8 are kept) |
+
+- Market jobs skip weekends and the NSE holidays in `data/nse_holidays.csv`. Add next year's dates from NSE's
+  holiday circular every December (the 2026 list was copied from two broker sites; check it against NSE).
+- Every run is saved and shown on **Settings & Status → Scheduled jobs**, with a **Run now** button. A failed
+  job is also written to the error log (and told on Telegram). Jobs that need Dhan say *skipped* without keys.
+- The backup finds `pg_dump` on PATH or in `C:\Program Files\PostgreSQL\<version>\bin`; otherwise set
+  `PG_DUMP_PATH` in `.env`. The password is passed to pg_dump privately (never on the command line).
+  `data/backups/` is in `.gitignore`: backups hold all your data, keep them off GitHub. Restore one with
+  `pg_restore --clean --dbname=marketlens data/backups/<file>.dump`.
+
+---
+
 ## Frontend (web app, Next.js)
 
 A second way to use MarketLens: a web app in `frontend/` (Next.js + Tailwind CSS). It is being built page
@@ -690,7 +794,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **877 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **948 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -745,7 +849,7 @@ MarketLens/
 │   ├── momentum/           # ranking.py (scores, filters), portfolio.py (cash, lots, costs, tax, shared),
 │   │                       # portfolio_bt.py (stock momentum backtest, module 8), etf_bt.py (ETF rotation, module 9)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
-│   └── scheduler/          # for the upcoming modules
+│   └── scheduler/          # jobs.py (every scheduled job, NSE holidays, run records); python -m marketlens.scheduler
 ├── migrations/             # Alembic migrations 0001 .. 0013
 ├── frontend/               # web app (Next.js): app/ pages, components/, lib/ (see Frontend above)
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py
@@ -816,8 +920,9 @@ default, DEMO data without keys, tests for every calculation).
   python -m marketlens.alerts.price_alerts watch --every 60 # in market hours, with a heartbeat
   python -m marketlens.alerts.price_alerts delete 3
   ```
-- Next: bot commands (status, positions, P&L, stop a strategy, exit all) and answering the Confirm / Reject
-  buttons (today: `python -m marketlens.trading.order_service confirm <signal>`); a page for alerts.
+- ✅ Done: the bot (`python -m marketlens.alerts.bot`, step 16) and page 12 (bot status, test message, which
+  messages are on, price alerts with Check now, message history).
+- Next: the web version of page 12, and starting the bot and the alert watcher with the scheduler.
 
 ### Platform
 - **Web frontend** (`frontend/`, started): each module page in turn, with the API endpoints it needs (option chain, backtests, strategies, orders).

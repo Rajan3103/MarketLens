@@ -14,9 +14,13 @@ import streamlit as st
 from marketlens import config
 from marketlens.backtest import options_bt as ob
 from marketlens.trading import forward as fw
-from marketlens.ui import historical_note, key_notice, trading_mode_banner
+from marketlens.ui import help_note, historical_note, key_notice, trading_mode_banner
 
 st.title("📝 Forward Test / Paper Trading")
+help_note("What this page does: runs a saved strategy on today's market every minute with virtual money (paper "
+          "broker) as a background process.\n"
+          "How to read it: P&L in Rs after costs, quantities in shares / units, times IST; 'vs backtest' "
+          "compares each forward-test day with the backtest of the same day.")
 st.caption("Run a saved strategy on today's live market with virtual money, minute by minute.")
 trading_mode_banner()
 key_notice("Dhan", ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"], "Forward tests run on DEMO prices until then.")
@@ -57,16 +61,16 @@ with new_tab:
     q_name = q[0].text_input("Name", "EMA 9/21 NIFTYBEES", key="q_name")
     q_symbol = q[1].text_input("Symbol (NSE)", "NIFTYBEES", key="q_symbol")
     q_rule = q[2].selectbox("Rule", list(fw.INDICATOR_RULES), format_func=fw.INDICATOR_RULES.get, key="q_rule")
-    q_qty = q[3].number_input("Quantity", 1, 100_000, 10, key="q_qty")
+    q_qty = q[3].number_input("Quantity (shares / units)", 1, 100_000, 10, key="q_qty")
     r = st.columns(4)
     q_tf = r[0].selectbox("Candle (minutes)", [1, 5, 15, 25, 60], index=1, key="q_tf")
     if q_rule == "ema_cross":
-        q_fast = r[1].number_input("Fast EMA", 2, 200, 9, key="q_fast")
-        q_slow = r[2].number_input("Slow EMA", 3, 400, 21, key="q_slow")
+        q_fast = r[1].number_input("Fast EMA (candles)", 2, 200, 9, key="q_fast")
+        q_slow = r[2].number_input("Slow EMA (candles)", 3, 400, 21, key="q_slow")
         extra = {"fast": q_fast, "slow": q_slow}
     else:
-        q_buy = r[1].number_input("Buy when RSI rises above", 5.0, 50.0, 30.0, key="q_rsi_buy")
-        q_sell = r[2].number_input("Sell when RSI falls below", 50.0, 95.0, 70.0, key="q_rsi_sell")
+        q_buy = r[1].number_input("Buy when RSI rises above (0-100)", 5.0, 50.0, 30.0, key="q_rsi_buy")
+        q_sell = r[2].number_input("Sell when RSI falls below (0-100)", 50.0, 95.0, 70.0, key="q_rsi_sell")
         extra = {"rsi_buy": q_buy, "rsi_sell": q_sell}
     q_short = r[3].checkbox("Allow short selling", False, key="q_short")
     if st.button("💾 Save indicator strategy", key="q_save"):
@@ -173,7 +177,7 @@ with history_tab:
             fig.add_bar(x=table["date"], y=table["forward_pnl"], name="Forward test (paper)", marker_color="#2a78d6")
             fig.add_bar(x=table["date"], y=pd.to_numeric(table["backtest_pnl"], errors="coerce"),
                         name="Backtest, same days", marker_color="#eb6834")
-            fig.update_layout(barmode="group", height=320, yaxis_title="Daily P&L (Rs)",
+            fig.update_layout(barmode="group", height=320, xaxis_title="Date", yaxis_title="Daily P&L (Rs)",
                               legend=dict(orientation="h"), margin=dict(l=10, r=10, t=30, b=10))
             st.plotly_chart(fig, width="stretch")
             st.dataframe(table, hide_index=True, width="stretch", column_config={

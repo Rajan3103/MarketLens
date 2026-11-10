@@ -20,7 +20,7 @@ from marketlens.db import check_connection  # noqa: E402
 from marketlens.ingest.prices import UNIVERSES, load_universe, sync_prices  # noqa: E402
 
 
-# Read the --universe and --years options typed after the script name.
+# Read the --universe, --years and --backfill options typed after the script name.
 def parse_args(argv=None) -> argparse.Namespace:
     """Return the chosen options (also shows help with --help)."""
     parser = argparse.ArgumentParser(description="Sync daily prices into PostgreSQL.")
@@ -28,6 +28,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="which list of symbols to sync (default: nifty50)")
     parser.add_argument("--years", type=int, default=10,
                         help="how many years of history to keep (default: 10)")
+    parser.add_argument("--backfill", action="store_true",
+                        help="also download older history before the first stored day, back to --years")
     return parser.parse_args(argv)
 
 
@@ -51,7 +53,8 @@ def main(argv=None) -> int:
     names = dict(zip(universe["symbol"], universe["name"]))
     print(f"Syncing {len(universe)} symbols from '{args.universe}', {start} to {end} ...")
 
-    summary = sync_prices(list(universe["symbol"]), start, end, instrument_type=kind, names=names)
+    summary = sync_prices(list(universe["symbol"]), start, end, instrument_type=kind, names=names,
+                          backfill=args.backfill)
     print(f"Done: {summary}")
     if summary.failed:
         print("Failed symbols are often renamed or newly listed; run update_universe.py "

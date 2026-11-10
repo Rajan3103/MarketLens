@@ -16,7 +16,7 @@ import streamlit as st
 from marketlens.backtest import options_bt as ob
 from marketlens.backtest.ui import show_backtest
 from marketlens.library import link_run
-from marketlens.ui import cost_settings_inputs, historical_note, key_notice
+from marketlens.ui import cost_settings_inputs, help_note, historical_note, key_notice
 
 UNDERLYINGS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"]
@@ -123,6 +123,10 @@ def stored_range(underlying: str):
 # ---------------------------------------------------------------- page
 
 st.title("🧪 Options Backtester")
+help_note("What this page does: tests a multi-leg option strategy minute by minute on stored data, with leg SL "
+          "/ target, trailing, re-entry, range breakout and overall M2M rules, after costs.\n"
+          "How to read it: times are IST, SL / target in the unit you choose (% of premium, points or Rs), P&L "
+          "in Rs after costs; equity and drawdown are in Rs and % of the capital you enter.")
 st.caption("Test an option strategy minute by minute on stored expired-options data (like AlgoTest).")
 key_notice("Dhan", ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"],
            "The Options Data Downloader stores labelled DEMO data until then.")
@@ -177,8 +181,8 @@ expiry_type = c[3].radio("Expiry", ["weekly", "monthly"], index=["weekly", "mont
                          key=f"expiry_type_{v}", horizontal=True)
 expiry_which = c[4].radio("Which expiry", ["current", "next"], index=["current", "next"].index(form["expiry_which"]),
                           key=f"expiry_which_{v}", horizontal=True)
-entry_time = c[5].time_input("Entry", form["entry_time"], key=f"entry_time_{v}", step=60)
-exit_time = c[6].time_input("Exit", form["exit_time"], key=f"exit_time_{v}", step=60)
+entry_time = c[5].time_input("Entry (IST)", form["entry_time"], key=f"entry_time_{v}", step=60)
+exit_time = c[6].time_input("Exit (IST)", form["exit_time"], key=f"exit_time_{v}", step=60)
 d = st.columns([0.6] * 5 + [1.6, 2])
 weekdays = tuple(i for i, name in enumerate(DAYS)
                  if d[i].checkbox(name, i in form["weekdays"], key=f"day_{i}_{v}"))
@@ -235,7 +239,7 @@ for n, leg in enumerate(st.session_state["bt_legs"], start=1):
             rule, value = ob.quick_strike(kind, vals["option_type"], ce_offset, pe_offset, ce_premium, pe_premium)
             r[1].markdown("SELL")
             r[2].markdown(vals["option_type"])
-            r[3].number_input("Lots", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
+            r[3].number_input("Lots (number of lots)", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
             r[4].markdown(f"Strike: **{'ATM' if rule == 'ATM' and not value else ''}"
                           f"{f'ATM{int(value):+d}' if rule == 'ATM' and value else ''}"
                           f"{f'premium ≈ Rs {value:g}' if rule == 'PREMIUM' else ''}**")
@@ -244,7 +248,7 @@ for n, leg in enumerate(st.session_state["bt_legs"], start=1):
             r[1].selectbox("Side", ["SELL", "BUY"], index=["SELL", "BUY"].index(leg["side"]), key=f"leg_{uid}_side")
             r[2].selectbox("Type", ["CE", "PE"], index=["CE", "PE"].index(leg["option_type"]),
                            key=f"leg_{uid}_option_type")
-            r[3].number_input("Lots", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
+            r[3].number_input("Lots (number of lots)", 1, 500, int(leg["lots"]), key=f"leg_{uid}_lots")
             rule = r[4].selectbox("Strike", list(ob.STRIKE_RULES), index=list(ob.STRIKE_RULES).index(leg["strike_rule"]),
                                   format_func=ob.STRIKE_RULES.get, key=f"leg_{uid}_strike_rule")
             value = float(leg["value"]) if rule == leg["strike_rule"] else VALUE_DEFAULT[rule]
@@ -258,10 +262,12 @@ for n, leg in enumerate(st.session_state["bt_legs"], start=1):
         for col, field, label in ((x[1], "sl", "SL"), (x[2], "target", "Target"), (x[3], "trail_x", "Trail every X"),
                                   (x[4], "trail_y", "move SL by Y"), (x[5], "lock_at", "Lock at"),
                                   (x[6], "lock_to", "lock profit")):
-            col.number_input(label, min_value=0.0, value=float(leg[field] or 0), step=1.0, key=f"leg_{uid}_{field}")
+            col.number_input(f"{label} ({ob.UNITS.get(leg['unit'], '')})", min_value=0.0,  # unit chosen on the left
+                             value=float(leg[field] or 0), step=1.0,
+                             key=f"leg_{uid}_{field}")
         x[7].selectbox("After SL", list(ob.REENTRY), index=list(ob.REENTRY).index(leg["reentry"]),
                        format_func=ob.REENTRY.get, key=f"leg_{uid}_reentry")
-        x[8].number_input("Max re-entries", 0, 20, int(leg["max_reentries"]), key=f"leg_{uid}_max_reentries")
+        x[8].number_input("Max re-entries (times)", 0, 20, int(leg["max_reentries"]), key=f"leg_{uid}_max_reentries")
     values = leg_values(leg)
     if quick:
         values["side"] = "SELL"
@@ -280,8 +286,8 @@ with s1.container(border=True):
                           format_func=lambda m: "At the entry time" if m == "time" else "Range breakout")
     if entry_mode == "breakout":
         b = st.columns(4)
-        range_start = b[0].time_input("Range from", form["range_start"], key=f"range_start_{v}", step=60)
-        range_end = b[1].time_input("Range to", form["range_end"], key=f"range_end_{v}", step=60)
+        range_start = b[0].time_input("Range from (IST)", form["range_start"], key=f"range_start_{v}", step=60)
+        range_end = b[1].time_input("Range to (IST)", form["range_end"], key=f"range_end_{v}", step=60)
         range_source = b[2].selectbox("Range of", ["underlying", "leg"], index=["underlying", "leg"].index(form["range_source"]),
                                       key=f"range_source_{v}",
                                       format_func=lambda s: "the index (all legs)" if s == "underlying" else "each leg's price")
@@ -301,12 +307,12 @@ with s2.container(border=True):
     for col, field, label in ((m[0], "m2m_sl", "M2M stop loss"), (m[1], "m2m_target", "M2M target"),
                               (m[2], "m2m_lock_at", "Lock when profit reaches"), (m[0], "m2m_lock_to", "…keep at least"),
                               (m[1], "m2m_trail_x", "Trail: every Rs X more"), (m[2], "m2m_trail_y", "raise the stop by Y")):
-        m2m[field] = col.number_input(label, min_value=0.0, value=float(form[field] or 0), step=500.0,
+        m2m[field] = col.number_input(f"{label} (Rs)", min_value=0.0, value=float(form[field] or 0), step=500.0,
                                       key=f"{field}_{v}") or None
 k1, k2 = st.columns(2)
 capital = k1.number_input("Capital (Rs, for return %, CAGR and drawdown %)", 10_000.0, 1e9, float(form["capital"]),
                           step=50_000.0, key=f"capital_{v}")
-lot_size = k2.number_input(f"Lot size (0 = today's {underlying} lot)", 0, 10_000, 0, key=f"lot_{v}")
+lot_size = k2.number_input(f"Lot size (units, 0 = today's {underlying} lot)", 0, 10_000, 0, key=f"lot_{v}")
 costs = cost_settings_inputs("backtester")
 
 # ---- 5. run ----

@@ -60,3 +60,29 @@ def repair_scale_errors(closes: pd.DataFrame, others: dict | None = None) -> tup
                     fixed[i] *= 10.0 ** -power
             frame[sym] = fixed
     return closes, others, fixes
+
+
+SPIKE_PCT = 12.0         # an index / ETF moving this much in one day and back the next day is a bad print
+
+
+# Remove one-day bad prints from an index or ETF series (e.g. ^NSEI at 11,382 on 06-Apr-2020 when it was ~8,100).
+def remove_spikes(series: pd.Series, spike_pct: float = SPIKE_PCT) -> tuple[pd.Series, list]:
+    """A close is a bad print when it moved more than spike_pct % from the day before AND the next close takes back
+    more than half of that move (up then down, or down then up). It is replaced by the day before's close.
+    Returns (clean series, list of fixes: date, bad value, value used). For indices and ETFs only: stocks can
+    really move 20 % (circuit limits), so they are left alone."""
+    clean = series.astype(float).copy()
+    values = clean.to_numpy(copy=True)
+    fixes = []
+    limit = spike_pct / 100
+    for i in range(1, len(values) - 1):
+        before, now, after = values[i - 1], values[i], values[i + 1]
+        if math.isnan(before) or math.isnan(now) or math.isnan(after) or before <= 0 or now <= 0:
+            continue
+        move_in, move_out = now / before - 1, after / now - 1
+        undone = abs(after / before - 1) < 0.5 * min(abs(move_in), abs(move_out))
+        if abs(move_in) > limit and abs(move_out) > limit and move_in * move_out < 0 and undone:
+            fixes.append({"date": clean.index[i].date(), "bad": round(float(now), 4), "used": round(float(before), 4)})
+            values[i] = before
+    clean[:] = values
+    return clean, fixes

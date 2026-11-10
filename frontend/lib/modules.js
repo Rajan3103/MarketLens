@@ -102,7 +102,7 @@ export const GROUPS = [
           "Status cards, open positions, today's orders and confirmations", "Loss limits, kill switch and error log"],
       },
       {
-        num: 12, title: "Telegram Bot Control Panel", href: "/telegram-panel", icon: "💬", web: "soon", streamlit: "planned",
+        num: 12, title: "Telegram Bot Control Panel", href: "/telegram-panel", icon: "💬", web: "soon", streamlit: "ready",
         description: "Alerts and bot commands on Telegram.",
         planned: ["Alerts for entries, exits, stop losses, daily P&L and errors",
           "Commands: status, positions, P&L, stop a strategy, exit all", "Confirm / Reject buttons for live orders",

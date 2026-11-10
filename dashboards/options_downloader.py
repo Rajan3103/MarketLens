@@ -26,7 +26,7 @@ from marketlens.ingest.options import (download_expired_options, load_option_day
                                        strike_labels)
 from marketlens.ingest.prices import UNIVERSES, load_prices, load_universe, sync_prices
 from marketlens.ingest.stored import what_is_stored
-from marketlens.ui import key_notice
+from marketlens.ui import help_note, key_notice
 
 UNDERLYINGS = list(INDICES)                     # NIFTY, BANKNIFTY, FINNIFTY, SENSEX
 INTERVALS = [1, 5, 15, 25, 60]
@@ -34,6 +34,10 @@ DEMO_BANNER = ("⚠️ DEMO DATA: the Dhan keys are not set, so prices are made 
                "(Black-Scholes from the real spot and India VIX). Not real prices.")
 
 st.title("📥 Historical Data Downloader")
+help_note("What this page does: downloads option chain snapshots, expired 1-minute options, daily prices and "
+          "Dhan intraday candles into PostgreSQL, and shows what is already stored.\n"
+          "How to read it: dates are trading days, strikes are counted from ATM (ATM ± N), timeframes are in "
+          "minutes; a stopped download continues where it left off.")
 key_notice("Dhan", ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"],
            "Option and intraday data will be clearly labelled DEMO data until then.")
 
@@ -129,7 +133,7 @@ with chain_tab:
         underlying = c1.selectbox("Underlying", UNDERLYINGS, key="ch_u")
         expiries = cached_expiries(underlying)
         expiry = c2.selectbox("Expiry", expiries, key="ch_exp", format_func=lambda d: f"{d:%a %d-%b-%Y}")
-        width = c3.slider("Strikes each side of ATM", 5, 20, 10, key="ch_width")
+        width = c3.slider("Strikes each side of ATM (strikes)", 5, 20, 10, key="ch_width")
         if st.button("🔄 Refresh chain", key="ch_refresh"):
             cached_chain.clear()
         chain = cached_chain(underlying, expiry)
@@ -180,7 +184,7 @@ with expired_tab:
     c4, c5, c6, c7 = st.columns(4)
     ex_flag = c4.radio("Expiry", ["weekly", "monthly"], horizontal=True, key="ex_flag",
                        help="Since 20-Nov-2024 only NIFTY and SENSEX have weekly options.")
-    ex_width = c5.slider("Strikes around ATM (±)", 0, 10, 10, key="ex_width")
+    ex_width = c5.slider("Strikes around ATM (± strikes)", 0, 10, 10, key="ex_width")
     ex_types = c6.multiselect("Option type", ["CE", "PE"], ["CE", "PE"], key="ex_types")
     ex_interval = c7.selectbox("Interval (preview / export)", INTERVALS, key="ex_int",
                                format_func=lambda m: f"{m} min")
@@ -231,8 +235,8 @@ with expired_tab:
             spot = df.drop_duplicates("ts")
             fig.add_trace(go.Scatter(x=spot["ts"], y=spot["spot"], name="Spot", yaxis="y2",
                                      line=dict(dash="dot", color="gray")))
-            fig.update_layout(height=380, yaxis_title="Option price (Rs)",
-                              yaxis2=dict(title="Spot", overlaying="y", side="right"),
+            fig.update_layout(height=380, xaxis_title="Time (IST)", yaxis_title="Option price (Rs)",
+                              yaxis2=dict(title="Spot (index points)", overlaying="y", side="right"),
                               legend=dict(orientation="h"),
                               title=f"Opening ATM strike {atm:,.0f}" + (" · DEMO" if demo else ""))
             st.plotly_chart(fig, width="stretch")
@@ -295,7 +299,7 @@ with stocks_tab:
         shown = list(closes.columns[:10])
         growth = closes[shown] / closes[shown].bfill().iloc[0] * 100
         fig = go.Figure([go.Scatter(x=growth.index, y=growth[c], name=c) for c in shown])
-        fig.update_layout(height=380, yaxis_title="Growth of 100", legend=dict(orientation="h"),
+        fig.update_layout(height=380, xaxis_title="Date", yaxis_title="Growth of Rs 100 (Rs)", legend=dict(orientation="h"),
                           title="Close prices, starting at 100" + (" (first 10 shown)" if len(closes.columns) > 10 else ""))
         st.plotly_chart(fig, width="stretch")
         st.caption(f"{len(closes):,} trading days × {len(closes.columns)} symbols (close prices).")
@@ -357,7 +361,8 @@ with dhan_tab:
         export_buttons(df, path.stem, f"{key}_exp")
         fig = go.Figure(go.Candlestick(x=df["timestamp"], open=df["open"], high=df["high"],
                                        low=df["low"], close=df["close"], name=sec.symbol))
-        fig.update_layout(height=420, xaxis_rangeslider_visible=False,
+        fig.update_layout(height=420, xaxis_rangeslider_visible=False, xaxis_title="Time (IST)",
+                          yaxis_title="Price (Rs or index points)",
                           title=f"{sec.symbol} · {timeframe}" + (" · DEMO" if demo else ""))
         st.plotly_chart(fig, width="stretch")
 

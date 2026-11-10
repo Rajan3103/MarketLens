@@ -657,6 +657,27 @@ class DownloadProgress(Base):
     __table_args__ = (UniqueConstraint("dataset", "key", "day"),)
 
 
+class AppSetting(Base):
+    """Settings changed from the app (not secrets: those stay in .env), e.g. which Telegram messages are on."""
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)
+    updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class SchedulerRun(Base):
+    """One run of a scheduled job (marketlens/scheduler/jobs.py): when, ok / failed / skipped, and what it did."""
+    __tablename__ = "scheduler_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    job_id: Mapped[str] = mapped_column(index=True)
+    started_at: Mapped[dt.datetime]
+    finished_at: Mapped[dt.datetime | None]
+    status: Mapped[str] = mapped_column(server_default="running")
+    message: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (Index("ix_scheduler_runs_job_started", "job_id", "started_at"),
+                      one_of("status", ["running", "ok", "failed", "skipped"]))
+
+
 class ErrorLog(Base):
     """Errors from any module, so the Bot Monitor (module 11) can show them."""
     __tablename__ = "error_log"

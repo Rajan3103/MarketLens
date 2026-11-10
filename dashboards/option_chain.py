@@ -25,7 +25,7 @@ from marketlens.options.strategies import (DEFAULT_IV, TEMPLATES, Leg, analyse, 
                                            payoff, save_strategy)
 from marketlens.options.strike_select import (atm_offset_strike, chain_to_long, strike_for_delta,
                                               strike_for_premium)
-from marketlens.ui import historical_note
+from marketlens.ui import help_note, historical_note
 
 UNDERLYINGS = list(INDICES)                       # NIFTY, BANKNIFTY, FINNIFTY, SENSEX
 LEG_COLUMNS = ["side", "option_type", "strike", "expiry", "lots", "lot_size", "entry_price", "iv"]
@@ -33,6 +33,11 @@ DEMO_BANNER = ("⚠️ DEMO DATA: the Dhan keys are not set, so this chain is ma
                "(Black-Scholes from the real spot and India VIX). Not real prices.")
 
 st.title("🔗 Option Chain & Strategy Builder")
+help_note("What this page does: the live option chain (DEMO without Dhan keys) with PCR, max pain and OI, and a "
+          "builder for multi-leg option strategies.\n"
+          "How to read it: strikes and spot in index points, premiums and P&L in Rs, OI in contracts; the "
+          "payoff chart shows Rs profit / loss at expiry (blue) and today (orange dashed) for each underlying "
+          "price.")
 
 
 # Upcoming expiries (asked again every 5 minutes at most).
@@ -110,7 +115,7 @@ with chain_tab:
         underlying = c1.selectbox("Underlying", UNDERLYINGS, key="oc_u")
         expiry = c2.selectbox("Expiry", cached_expiries(underlying), key="oc_exp",
                               format_func=lambda d: f"{d:%a %d-%b-%Y}")
-        width = c3.slider("Strikes each side of ATM", 5, 20, 10, key="oc_width")
+        width = c3.slider("Strikes each side of ATM (strikes)", 5, 20, 10, key="oc_width")
         if st.button("🔄 Refresh", key="oc_refresh"):
             cached_chain.clear()
         chain = cached_chain(underlying, expiry)
@@ -170,6 +175,7 @@ with chain_tab:
                              go.Bar(x=view["strike"], y=view[pe_col], name="Puts", marker_color="#16a34a")])
             fig.add_vline(x=spot, line_dash="dash", line_color="gray", annotation_text="Spot")
             fig.update_layout(title=title, barmode="group", height=330, legend=dict(orientation="h"),
+                              xaxis_title="Strike (index points)", yaxis_title="Open interest (contracts)",
                               margin=dict(t=40, b=10))
             st.plotly_chart(fig, width="stretch")
 
@@ -180,7 +186,7 @@ with chain_tab:
         pick = a1.selectbox("Strike", strikes, index=int(view["is_atm"].idxmax()), key="oc_pick",
                             format_func=lambda k: f"{k:,.0f}" + ("  (ATM)" if k == s["atm"] else ""))
         side = a2.radio("Side", ["BUY", "SELL"], horizontal=True, key="oc_side")
-        lots = a3.number_input("Lots", 1, 100, 1, key="oc_lots")
+        lots = a3.number_input("Lots (number of lots)", 1, 100, 1, key="oc_lots")
         for col, opt in ((a4, "CE"), (a5, "PE")):
             col.write("")
             if col.button(f"➕ Add {opt} to builder", key=f"oc_add_{opt}"):
@@ -212,7 +218,7 @@ with builder_tab:
                           help="Strangles and iron condors: how far the sold strikes are from ATM")
     wing = t3.number_input("Wing (strikes)", 1, 15, 2, key="b_wing",
                            help="Width of spreads and of the protective legs")
-    t_lots = t4.number_input("Lots", 1, 100, 1, key="b_tlots")
+    t_lots = t4.number_input("Lots (number of lots)", 1, 100, 1, key="b_tlots")
     far_expiry = None
     if template == "calendar_spread" and last:
         later = [e for e in cached_expiries(b_under) if e > b_expiry]
@@ -234,7 +240,7 @@ with builder_tab:
         q_rule = q3.radio("Strike rule", ["ATM ± N", "Premium ≈ Rs", "Delta ≈"], key="q_rule")
         q_value = q4.number_input("N / Rs / delta", value={"ATM ± N": 0.0, "Premium ≈ Rs": 50.0,
                                                            "Delta ≈": 0.20}[q_rule], key=f"q_val_{q_rule}")
-        q_lots = q5.number_input("Lots", 1, 100, 1, key="q_lots")
+        q_lots = q5.number_input("Lots (number of lots)", 1, 100, 1, key="q_lots")
         if st.button("Add leg", key="q_add", disabled=not last):
             try:
                 if q_rule == "ATM ± N":
@@ -261,7 +267,7 @@ with builder_tab:
             "option_type": st.column_config.SelectboxColumn("Type", options=["CE", "PE", "FUT"], required=True),
             "strike": st.column_config.NumberColumn("Strike", min_value=0.0, step=50.0, help="Empty for FUT"),
             "expiry": st.column_config.DateColumn("Expiry", format="DD-MMM-YYYY", required=True),
-            "lots": st.column_config.NumberColumn("Lots", min_value=1, step=1, required=True),
+            "lots": st.column_config.NumberColumn("Lots (number of lots)", min_value=1, step=1, required=True),
             "lot_size": st.column_config.NumberColumn("Lot size", min_value=1, step=1, required=True),
             "entry_price": st.column_config.NumberColumn("Entry price (Rs)", min_value=0.0, step=0.05, format="%.2f"),
             "iv": st.column_config.NumberColumn("IV %", min_value=0.0, step=0.1, format="%.1f",
@@ -272,7 +278,7 @@ with builder_tab:
     for problem in problems:
         st.warning(problem)
 
-    spot = st.number_input("Spot (centre of the chart)", value=float(b_spot), step=50.0, key="b_spot")
+    spot = st.number_input("Spot (index points, centre of the chart)", value=float(b_spot), step=50.0, key="b_spot")
     if not legs:
         st.info("No legs yet: pick a template, quick-add a leg, or type one into the table.")
     else:
@@ -311,7 +317,7 @@ with builder_tab:
         fig.add_hline(y=0, line_color="gray")
         for b in a["breakevens"]:
             fig.add_vline(x=b, line_dash="dot", line_color="orange", annotation_text=f"{b:,.0f}")
-        fig.update_layout(height=480, xaxis_title=f"{b_under} price", yaxis_title="Profit / loss (Rs)",
+        fig.update_layout(height=480, xaxis_title=f"{b_under} price (index points)", yaxis_title="Profit / loss (Rs)",
                           legend=dict(orientation="h"))
         st.plotly_chart(fig, width="stretch")
         if a["max_loss"] is None:

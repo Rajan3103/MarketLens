@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from marketlens.simulator import replay as rp
-from marketlens.ui import cost_settings_inputs, historical_note, key_notice
+from marketlens.ui import cost_settings_inputs, help_note, historical_note, key_notice
 
 UNDERLYINGS = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"]
 CHAIN_COLUMNS = ["ce_oi", "ce_delta", "ce_iv", "ce_ltp", "strike", "pe_ltp", "pe_iv", "pe_delta", "pe_oi"]
@@ -66,7 +66,7 @@ def step(n: int):
     act(st.session_state["sim"].advance, n)
 
 
-# Jump to the time in the "Jump to" box or on the slider.
+# Jump to the time in the "Jump to (IST)" box or on the slider.
 def jump(key: str):
     act(st.session_state["sim"].jump, st.session_state[key])
 
@@ -107,7 +107,8 @@ def spot_chart(sim: rp.SimSession) -> go.Figure:
     day = sim.day.day
     fig.update_xaxes(range=[dt.datetime.combine(day, dt.time(9, 15)), dt.datetime.combine(day, dt.time(15, 30))],
                      rangeslider_visible=False)
-    fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), title=f"{sim.underlying} (5-min, so far)")
+    fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), title=f"{sim.underlying} (5-min, so far)",
+                      xaxis_title="Time (IST)", yaxis_title="Index (points)")
     return fig
 
 
@@ -118,7 +119,7 @@ def pnl_chart(sim: rp.SimSession) -> go.Figure:
                                fill="tozeroy", fillcolor="rgba(42,120,214,0.12)"))
     fig.add_hline(y=0, line_color="gray")
     fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), title="P&L (Rs, after costs)",
-                      yaxis_tickprefix="Rs ")
+                      yaxis_tickprefix="Rs ", xaxis_title="Time (IST)", yaxis_title="P&L (Rs)")
     return fig
 
 
@@ -138,13 +139,17 @@ def payoff_chart(sim: rp.SimSession) -> go.Figure | None:
     fig.add_vline(x=spot, line_color="gray", line_dash="dot", annotation_text=f"spot {spot:,.0f}")
     fig.add_hline(y=0, line_color="gray")
     fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), title="Payoff of open positions",
-                      legend=dict(orientation="h"))
+                      xaxis_title=f"{sim.underlying} (index points)", yaxis_title="P&L (Rs)", legend=dict(orientation="h"))
     return fig
 
 
 # ---------------------------------------------------------------- page
 
 st.title("⏪ Option Simulator")
+help_note("What this page does: replays a stored trading day minute by minute so you can practise placing "
+          "option orders with SL and target.\n"
+          "How to read it: the clock is IST, prices in Rs (index in points), P&L in Rs after costs; the chain "
+          "shows only what was known at the replayed minute.")
 st.caption("Replay a past day minute by minute and practise trading it with virtual money.")
 key_notice("Dhan", ["DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"],
            "The Options Data Downloader stores labelled DEMO days until then.")
@@ -186,9 +191,9 @@ with st.expander("1. Choose a day to replay", expanded=sim is None):
         want_e = handoff["expiry"] if handoff and handoff["expiry"] in expiries else expiries[0]
         a[2].selectbox("Expiry", expiries, index=expiries.index(want_e),
                                 format_func=lambda d: f"{d:%a %d-%b-%Y}", key="s_expiry")
-        a[3].time_input("Start at", dt.time(9, 20), step=60, key="s_start")
+        a[3].time_input("Start at (IST)", dt.time(9, 20), step=60, key="s_start")
         a[4].number_input("Capital (Rs)", 10_000.0, 1e9, 500_000.0, step=50_000.0, key="s_capital")
-        a[5].number_input("Lot size (0 = today's)", 0, 10_000, 0, key="s_lot")
+        a[5].number_input("Lot size (units, 0 = today's)", 0, 10_000, 0, key="s_lot")
         costs = cost_settings_inputs("simulator")
         st.button("▶️ Load this day" if sim is None else "🔄 Start a new session with this day", type="primary",
                   on_click=start_session, args=(costs,))
@@ -226,10 +231,10 @@ def live():
     c[2].button("+5 min", on_click=step, args=(5,), key="c_5", disabled=sim.clock.finished, width="stretch")
     c[3].selectbox("Speed", rp.SPEEDS, index=rp.SPEEDS.index(sim.clock.speed), key="sim_speed", on_change=set_speed,
                    format_func=lambda s: f"{s}x ({s} min/s)", label_visibility="collapsed")
-    c[4].time_input("Jump to", sim.clock.time(), step=60, key="c_jump_to", label_visibility="collapsed")
+    c[4].time_input("Jump to (IST)", sim.clock.time(), step=60, key="c_jump_to", label_visibility="collapsed")
     c[5].button("Go", on_click=jump, args=("c_jump_to",), key="c_go")
     st.session_state["sim_slider"] = sim.clock.time()
-    c[6].slider("Time", min_value=dt.time(9, 16), max_value=dt.time(15, 30), step=dt.timedelta(minutes=1),
+    c[6].slider("Time (IST)", min_value=dt.time(9, 16), max_value=dt.time(15, 30), step=dt.timedelta(minutes=1),
                 key="sim_slider", on_change=jump, args=("sim_slider",), label_visibility="collapsed")
 
     m = st.columns(5)
@@ -278,9 +283,9 @@ def live():
                 st.session_state["o_strike"] = atm
             st.selectbox("Strike", strikes, key="o_strike", format_func=lambda k: f"{k:,.0f}" + (" (ATM)" if k == atm else ""))
         p = st.columns(3)
-        p[0].number_input("Lots", 1, 500, 1, key="o_lots")
-        p[1].number_input("SL (points)", 0.0, 10_000.0, 0.0, step=5.0, key="o_sl", help="0 = no stop loss")
-        p[2].number_input("Target (points)", 0.0, 10_000.0, 0.0, step=5.0, key="o_target", help="0 = no target")
+        p[0].number_input("Lots (number of lots)", 1, 500, 1, key="o_lots")
+        p[1].number_input("SL (points = Rs per unit)", 0.0, 10_000.0, 0.0, step=5.0, key="o_sl", help="0 = no stop loss")
+        p[2].number_input("Target (points = Rs per unit)", 0.0, 10_000.0, 0.0, step=5.0, key="o_target", help="0 = no target")
         if strikes:
             price = sim.quote(st.session_state["o_strike"], st.session_state["o_type"])
             st.caption(f"Last price {price:,.2f} · {st.session_state['o_lots'] * sim.lot_size} units")

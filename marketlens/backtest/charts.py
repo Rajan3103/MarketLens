@@ -27,8 +27,8 @@ WEEKDAYS = list(calendar.day_abbr)               # Mon .. Sun
 
 
 # Shared look: hover on the x position, a horizontal legend and small margins.
-def _layout(fig: go.Figure, title: str, y_title: str, height: int = 380) -> go.Figure:
-    fig.update_layout(title=title, height=height, hovermode="x unified", yaxis_title=y_title,
+def _layout(fig: go.Figure, title: str, y_title: str, height: int = 380, x_title: str = "Date") -> go.Figure:
+    fig.update_layout(title=title, height=height, hovermode="x unified", yaxis_title=y_title, xaxis_title=x_title,
                       legend=dict(orientation="h", y=1.02, x=0, yanchor="bottom"),
                       margin=dict(l=10, r=10, t=60, b=10))
     return fig
@@ -96,7 +96,7 @@ def daily_heatmap(result: BacktestResult) -> go.Figure:
         hovertemplate="%{customdata}<br>P&L Rs %{z:,.0f}<extra></extra>"))
     fig.update_yaxes(autorange="reversed")
     fig.update_layout(hovermode="closest")
-    return _layout(fig, "Day-wise P&L (each square is one day)", "", height=260)
+    return _layout(fig, "Day-wise P&L (each square is one day, Rs)", "Weekday", height=260, x_title="Week (Monday)")
 
 
 # Month-wise P&L as a table: one row per year, Jan..Dec columns and a Total column.
@@ -125,7 +125,7 @@ def monthly_heatmap(result: BacktestResult) -> go.Figure:
         colorbar=dict(title="Rs"), hovertemplate="%{x} %{y}<br>P&L Rs %{z:,.0f}<extra></extra>"))
     fig.update_yaxes(autorange="reversed", type="category")
     fig.update_layout(hovermode="closest")
-    return _layout(fig, "Month-wise P&L", "", height=140 + 50 * len(grid))
+    return _layout(fig, "Month-wise P&L (Rs)", "Year", height=140 + 50 * len(grid), x_title="Month")
 
 
 # Total P&L, number of days and win rate for each day of the week.
@@ -152,4 +152,4 @@ def weekday_chart(result: BacktestResult) -> go.Figure:
         hovertemplate="%{x}: Rs %{y:,.0f}<br>%{customdata[0]} days, %{customdata[1]:.0f}% winning<extra></extra>"))
     fig.add_hline(y=0, line_color="gray")
     fig.update_layout(hovermode="closest")
-    return _layout(fig, "P&L by weekday", "Total P&L (Rs)", height=320)
+    return _layout(fig, "P&L by weekday", "Total P&L (Rs)", height=320, x_title="Weekday")
