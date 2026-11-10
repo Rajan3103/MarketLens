@@ -1,4 +1,4 @@
-# MarketLens~~~
+# MarketLens
 
 Market Analytics System with an Algorithmic Trading Framework for Indian markets (NSE / BSE),
 similar in spirit to AlgoTest and StockMock.
