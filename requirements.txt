@@ -15,5 +15,6 @@ fastapi>=0.115       # the backend API (marketlens/api) and the webhook receiver
 uvicorn>=0.30        # runs the API as a web server (python -m marketlens.api), auto-reload while developing
 httpx>=0.27          # lets the tests call the API and the webhook receiver (FastAPI TestClient)
 python-telegram-bot>=21.11,<22   # the Telegram bot (python -m marketlens.alerts.bot): commands, Confirm / Reject buttons
+APScheduler>=3.10,<4  # runs the daily jobs at set times, Asia/Kolkata (python -m marketlens.scheduler)
 tzdata>=2024.1       # time zone data (Asia/Kolkata) for Windows, which has none built in
 pytest>=8.0          # runs the automatic tests in the tests/ folder

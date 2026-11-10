@@ -30,7 +30,7 @@ CATEGORIES = {
               ("order_placed", "order_filled", "order_rejected", "order_cancelled")),
     "sl_hits": ("Stop-loss hits", ("sl_hit",)),
     "errors": ("Errors", ("error",)),
-    "daily_report": ("Daily report (15:45)", ("daily_report",)),
+    "daily_report": ("Daily report (15:50)", ("daily_report",)),
     "webhook": ("Webhook alerts (TradingView / Chartink)", ("webhook_alert",)),
 }
 # Always sent, whatever the panel says: you must see these

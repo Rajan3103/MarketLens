@@ -7,8 +7,8 @@ Commands (only from your own chat, TELEGRAM_CHAT_ID; every other chat is ignored
     /stop        kill switch ON (no new orders today)
     /resume_all  kill switch OFF and paused strategies running again (asks "are you sure")
     /squareoff   close every position, kill switch on, stop every strategy (asks to confirm)
-It also answers the ✅ Confirm / ❌ Reject buttons under live orders that wait for you, sends the daily
-report at 15:45 (if switched on on page 12) and writes a heartbeat every minute (page 11's status card).
+It also answers the ✅ Confirm / ❌ Reject buttons under live orders that wait for you and writes a heartbeat
+every minute (page 11's status card). The 15:50 daily report is sent by the scheduler (marketlens/scheduler).
 
 The work is done by BotCore (plain Python, easy to test); the rest connects it to python-telegram-bot.
 Paper or live follows TRADING_MODE in .env; the bot cannot change it.
@@ -26,7 +26,6 @@ from marketlens.logger import get_logger, record_error
 log = get_logger(__name__)
 HEARTBEAT = "telegram_bot"
 CONFIRM_SECONDS = 120                     # a "yes, square off" button older than this is refused
-REPORT_AT = dt.time(15, 45)
 MAX_LINES = 30                            # rows shown per table (Telegram messages are short)
 COMMANDS = {
     "start": "Hello and the list of commands",
@@ -445,19 +444,12 @@ async def on_other(update, context):
     await message.reply_text("I only understand commands. Send /help for the list.")
 
 
-# Every minute: a heartbeat; at 15:45 on weekdays: the daily report (when switched on on page 12).
+# Every minute: a heartbeat (the daily report is sent by the scheduler at 15:50).
 async def background_loop(core: BotCore, sleep=asyncio.sleep):
-    from marketlens.alerts.telegram import notify
     from marketlens.trading.live_runner import beat
-    sent_on = None
     while True:
-        now = core.now()
         try:
             await asyncio.to_thread(beat, HEARTBEAT, "answering commands", core.url)
-            if now.weekday() < 5 and now.time() >= REPORT_AT and sent_on != now.date():
-                text = await asyncio.to_thread(daily_report, core.url, now)
-                await asyncio.to_thread(notify, text, None, "bot", "daily_report", core.url)
-                sent_on = now.date()
         except Exception as err:                       # the database may be down: try again next minute
             log.warning("Telegram bot background step failed: %s", err)
         await sleep(60)
@@ -469,7 +461,7 @@ def build_application(token: str, core: BotCore | None = None):
     from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters
     core = core or BotCore()
 
-    # When the bot starts: the command menu, and the heartbeat / daily report loop.
+    # When the bot starts: the command menu, and the heartbeat loop.
     async def started(app):
         await app.bot.set_my_commands([BotCommand(name, text[:256]) for name, text in COMMANDS.items()])
         app.bot_data["loop"] = asyncio.create_task(background_loop(core))

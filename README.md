@@ -293,6 +293,7 @@ Migrations so far:
 | 0013 | `portfolio_holdings` also keeps the holdings after every rebalance of a saved backtest run (`run_id`, `rebalance_date`, price, value) |
 | 0014 | `notifications`: status `skipped`, `source`, `event`; `price_alerts`: % change, indicator, OI and PCR alerts, `params`, last value |
 | 0015 | `app_settings`: settings changed from the app (not secrets), e.g. which Telegram messages are on |
+| 0016 | `scheduler_runs`: every run of a scheduled job (ok / failed / skipped and its result) |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -617,8 +618,43 @@ The bot sends you every alert and answers commands such as `/status` or `/stop`.
 | `/login` | today's Dhan login, with the renew steps when it is not valid |
 
 The "yes" buttons of `/resume_all` and `/squareoff` work for 2 minutes only. Which messages you get (signals,
-fills, SL hits, errors, the 15:45 daily report, webhook alerts) is chosen on page 12; live orders waiting for
+fills, SL hits, errors, the 15:50 daily report, webhook alerts) is chosen on page 12; live orders waiting for
 your Confirm, the kill switch and price alerts are always sent.
+
+---
+
+### 17. Run the daily jobs automatically (scheduler)
+
+One process runs every routine job at its time (India time). Start it in its own terminal and leave it running
+(on AWS later, as a service):
+
+```bash
+python -m marketlens.scheduler                      # Ctrl+C stops it
+python -m marketlens.scheduler --list               # each job, its next run and its last result
+python -m marketlens.scheduler --run sync_prices    # run one job now (add --force on a holiday)
+```
+
+| Time (IST) | Job |
+| --- | --- |
+| 08:30 Mon-Fri | refresh the Nifty 50 / 200 lists and the Dhan instrument master |
+| 08:45 Mon-Fri | check today's Dhan login; Telegram reminder when it is not valid |
+| 09:00 Mon-Fri | sync daily prices: Nifty 200 stocks, ETFs, Nifty 50, the Momentum 30 ETFs |
+| 09:20, first trading day of the month | momentum and ETF rebalance signals on Telegram (historical model output, not advice) |
+| every 5 min, 09:15-15:30 | NIFTY and BANKNIFTY option chain snapshots (needs Dhan) |
+| every 1 min, 09:15-15:30 | price alerts |
+| 15:45 Mon-Fri | today's 1-minute option data for the backtester: NIFTY, BANKNIFTY, FINNIFTY, SENSEX, ATM-10 .. ATM+10 (needs Dhan) |
+| 15:50 Mon-Fri | end-of-day report on Telegram: P&L by strategy, orders, forward test vs backtest, alerts, top movers |
+| 16:00 Mon-Fri | holdings snapshot (paper, and your Dhan account when the keys are set) |
+| Sunday 10:00 | PostgreSQL backup with `pg_dump` into `data/backups/` (the newest 8 are kept) |
+
+- Market jobs skip weekends and the NSE holidays in `data/nse_holidays.csv`. Add next year's dates from NSE's
+  holiday circular every December (the 2026 list was copied from two broker sites; check it against NSE).
+- Every run is saved and shown on **Settings & Status → Scheduled jobs**, with a **Run now** button. A failed
+  job is also written to the error log (and told on Telegram). Jobs that need Dhan say *skipped* without keys.
+- The backup finds `pg_dump` on PATH or in `C:\Program Files\PostgreSQL\<version>\bin`; otherwise set
+  `PG_DUMP_PATH` in `.env`. The password is passed to pg_dump privately (never on the command line).
+  `data/backups/` is in `.gitignore`: backups hold all your data, keep them off GitHub. Restore one with
+  `pg_restore --clean --dbname=marketlens data/backups/<file>.dump`.
 
 ---
 
@@ -743,7 +779,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **897 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **918 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -798,7 +834,7 @@ MarketLens/
 │   ├── momentum/           # ranking.py (scores, filters), portfolio.py (cash, lots, costs, tax, shared),
 │   │                       # portfolio_bt.py (stock momentum backtest, module 8), etf_bt.py (ETF rotation, module 9)
 │   ├── library.py          # module 10: strategy library, trades as round trips, journal, holdings, performance
-│   └── scheduler/          # for the upcoming modules
+│   └── scheduler/          # jobs.py (every scheduled job, NSE holidays, run records); python -m marketlens.scheduler
 ├── migrations/             # Alembic migrations 0001 .. 0013
 ├── frontend/               # web app (Next.js): app/ pages, components/, lib/ (see Frontend above)
 ├── scripts/                # init_db.py, sync_prices.py, update_universe.py, download_options.py

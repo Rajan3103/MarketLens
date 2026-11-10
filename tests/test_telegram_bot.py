@@ -225,17 +225,14 @@ def test_handlers(core):
     assert chat.effective_message.replies[0][0].startswith("I only understand commands")
 
 
-# The background loop writes a heartbeat and sends the daily report once after 15:45 on a weekday.
+# The background loop writes a heartbeat (the daily report is the scheduler's job now).
 def test_background_loop(core):
-    core.now = lambda: dt.datetime(2026, 11, 10, 15, 50, tzinfo=IST)     # a Tuesday
-
     async def stop(seconds):
         raise asyncio.CancelledError
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(bot.background_loop(core, sleep=stop))
     assert lr.heartbeats(core.url)[bot.HEARTBEAT]["message"] == "answering commands"
-    report = telegram.recent_notifications(1, core.url)[0]
-    assert report["event"] == "daily_report" and report["message"].startswith("📊 MarketLens report 10-Nov-2026")
+    assert not any(n["event"] == "daily_report" for n in telegram.recent_notifications(20, core.url))
 
 
 # The application has the commands, the buttons and the catch-all (built offline, nothing is started).

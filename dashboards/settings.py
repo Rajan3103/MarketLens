@@ -78,3 +78,38 @@ others = {
 }
 st.dataframe(pd.DataFrame({"Setting": others.keys(), "Value": [str(v) for v in others.values()]}),
              hide_index=True, width="stretch")
+
+# ---- 5. Scheduled jobs (python -m marketlens.scheduler) ----
+st.subheader("Scheduled jobs")
+if not ok:
+    st.caption("Needs the database: the scheduler saves every run there.")
+else:
+    from marketlens.scheduler import jobs as sched
+    from marketlens.trading import live_runner as lr
+    from marketlens.trading import monitor as mon
+    state, text = mon.heartbeat_state(lr.heartbeats().get(sched.HEARTBEAT))
+    if state == "alive":
+        st.success(f"🟢 Scheduler running: {text}")
+    else:
+        st.warning(("⚪ Scheduler not started. " if state == "never" else f"🔴 Scheduler stopped ({text}). ")
+                   + "Start it in its own terminal: `python -m marketlens.scheduler`")
+    r1, r2 = st.columns([3, 1])
+    pick = r1.selectbox("Run a job now", [j.id for j in sched.JOBS], format_func=lambda i: sched.BY_ID[i].name,
+                        key="sched_pick")
+    if r2.button("▶️ Run now", key="sched_run", width="stretch"):
+        with st.spinner(f"Running {sched.BY_ID[pick].name} ..."):
+            status, result = sched.run_job(pick, force=True)
+        (st.success if status == "ok" else st.info if status == "skipped" else st.error)(f"{status}: {result}")
+    # the table comes after the button, so it already shows a run started just now
+    icons = {"ok": "✅ ok", "failed": "❌ failed", "skipped": "⏭️ skipped", "running": "⏳ running",
+             "never run": "never run"}
+    table = pd.DataFrame(sched.job_table())
+    table["status"] = table["status"].map(icons).fillna(table["status"])
+    st.dataframe(table[["job", "when", "next_run", "last_run", "status", "result"]], hide_index=True, width="stretch",
+                 column_config={"next_run": st.column_config.DatetimeColumn("Next run", format="ddd DD-MMM HH:mm"),
+                                "last_run": st.column_config.DatetimeColumn("Last run", format="DD-MMM HH:mm")})
+    holidays = sched.load_holidays()
+    coming = sorted(d for d in holidays if d >= pd.Timestamp.now(tz="Asia/Kolkata").date())[:3]
+    st.caption(f"Market jobs skip weekends and the {len(holidays)} NSE holidays in data/nse_holidays.csv"
+               + (" (next: " + ", ".join(f"{d:%d-%b} {holidays[d]}" for d in coming) + ")" if coming else "")
+               + ". Add next year's list from NSE's holiday circular each December.")
