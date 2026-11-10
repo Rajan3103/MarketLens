@@ -442,7 +442,7 @@ class OrderService:
         self.save_orders(legs, mode, sid, signal_id, "REJECTED", reasons)
         log.warning("Signal %s (%s) blocked: %s", signal_id, name, reasons)
         self.tell(f"🚫 Signal {signal_id} ({name}) blocked, nothing was sent:\n- " + "\n- ".join(problems),
-                  event="order_rejected")
+                  event="signal_blocked")
         return SignalResult(signal_id, "BLOCKED", problems=problems, message=reasons)
 
     # Live with AUTO_TRADE=false: save the orders as waiting and ask on Telegram.
@@ -454,7 +454,7 @@ class OrderService:
                 f"Tap Confirm within {config.CONFIRM_TIMEOUT_MIN} minutes, or run:\n"
                 f"python -m marketlens.trading.order_service confirm {signal_id}")
         self.tell(text, buttons=[("✅ Confirm", f"confirm:{signal_id}"), ("❌ Reject", f"reject:{signal_id}")],
-                  event="signal")
+                  event="confirm_request")
         log.info("Signal %s waiting for confirmation (%s legs)", signal_id, len(legs))
         return SignalResult(signal_id, WAITING, message="Waiting for your confirmation on Telegram")
 
@@ -715,9 +715,14 @@ class OrderService:
             return ""
 
     # Send a message (Telegram) and keep a copy in the notifications table (sent / failed / skipped).
-    # event: signal, order_placed, order_filled, order_rejected, order_cancelled, sl_hit, kill_switch, error.
+    # event: confirm_request, signal_blocked, order_placed / filled / rejected / cancelled, sl_hit, kill_switch, error.
     def tell(self, text: str, buttons: list[tuple[str, str]] | None = None, event: str | None = None) -> bool:
-        from marketlens.alerts.telegram import save_notification
+        from marketlens.alerts.telegram import CATEGORIES, category_of, notification_settings, save_notification
+        category = category_of(event)
+        if category and not notification_settings(self.url)[category]:
+            save_notification(text, "skipped", f"Switched off on the Telegram panel ({CATEGORIES[category][0]})",
+                              "order_service", event, self.url)
+            return False
         try:
             status, error = _status_of(self.notify(text, buttons=buttons))
         except Exception as err:

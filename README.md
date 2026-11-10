@@ -43,7 +43,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 | | 9 | ETF Momentum Portfolio | Top-K ETF rotation backtest after costs and capital gains tax, vs Nifty 50; check a claimed return; parameter sweep; current signal | ✅ |
 | **Control centre** | 10 | Personal Analytics & Strategy Library | Strategy library (open anywhere, duplicate, rename, delete, JSON export / import), holdings & P&L, trade journal, combined performance vs Nifty 50 | ✅ |
 | | 11 | Live Algo Trading & Bot Monitor | Dhan live broker (orders, super orders, books, exit-all) behind safety checks; daily login check and 08:45 Telegram reminder; order service with risk checks, kill switch and Telegram confirmations; live runner and Bot Monitor page, in Streamlit and the **web app** (`/live-trading`: deploy, Start / Pause / Stop, status cards, orders, positions, Confirm / Reject, loss limits, kill switch, error log) | ✅ |
-| | 12 | Telegram Bot Control Panel | Every message saved in `notifications` (sent / failed / skipped) from orders, SL hits, kill switch, webhooks, forward tests, the live runner and errors; price alerts (price, % change, indicator rule, OI / PCR); bot commands next | 🛠️ |
+| | 12 | Telegram Bot Control Panel | Bot with commands (`/status`, `/positions`, `/orders`, `/pnl`, `/pause`, `/stop`, `/squareoff`, `/addalert` ...) and Confirm / Reject buttons, answering only your chat; every message saved (sent / failed / skipped); notification switches; price alerts (price, % change, indicator, OI / PCR); page 12 with test message, alerts and message history | ✅ |
 
 ### Highlights of the ready modules
 
@@ -292,6 +292,7 @@ Migrations so far:
 | 0012 | `background_jobs`: progress and results of slow work started through the API |
 | 0013 | `portfolio_holdings` also keeps the holdings after every rebalance of a saved backtest run (`run_id`, `rebalance_date`, price, value) |
 | 0014 | `notifications`: status `skipped`, `source`, `event`; `price_alerts`: % change, indicator, OI and PCR alerts, `params`, last value |
+| 0015 | `app_settings`: settings changed from the app (not secrets), e.g. which Telegram messages are on |
 
 When `marketlens/models.py` changes, make and apply a new migration:
 
@@ -569,6 +570,58 @@ still running when the API restarts is marked failed.
 
 ---
 
+### 16. Create your bot with @BotFather and find your chat ID
+
+The bot sends you every alert and answers commands such as `/status` or `/stop`. It only ever answers
+**your** chat (`TELEGRAM_CHAT_ID`); messages from anyone else are ignored and written to the error log.
+
+1. **Make the bot.** In Telegram, search for **@BotFather** (the one with the blue tick) and press *Start*.
+   Send `/newbot`, then a display name (e.g. *MarketLens*) and a username that ends in `bot`
+   (e.g. `marketlens_yourname_bot`).
+2. **Copy the token.** BotFather answers with a token like `1234567890:AAH...`. Put it in `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN=1234567890:AAH...
+   ```
+   The token is a password: never put it in code or share it. If it leaks, send `/revoke` to BotFather and
+   put the new one in `.env`.
+3. **Say hello to your bot.** Open `t.me/<your bot's username>`, press *Start* and send any message (e.g. `hi`).
+   A bot cannot write to you before you have written to it.
+4. **Find your chat ID.** With the bot *not* running (a running bot reads the messages first), run:
+   ```bash
+   python -c "import json, urllib.request; from marketlens import config; r = json.load(urllib.request.urlopen(f'https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getUpdates')); print(sorted({u['message']['chat']['id'] for u in r['result'] if 'message' in u}))"
+   ```
+   It prints something like `[987654321]`. (Empty list? Send the bot another message and run it again.)
+   Put the number in `.env`:
+   ```
+   TELEGRAM_CHAT_ID=987654321
+   ```
+   (A group chat's ID starts with a minus sign: copy it with the minus.)
+5. **Test it.** Open page 12 (Telegram Bot Control Panel) and press **Send test message**; it should arrive at
+   once. The *Message history* tab shows every message with its status (sent / failed / skipped).
+6. **Start the bot** in its own terminal (it keeps running; Ctrl+C stops it):
+   ```bash
+   python -m marketlens.alerts.bot
+   ```
+   Send `/start` to see the commands. Page 11 and page 12 show the bot as alive while it runs. To check price
+   alerts every minute in market hours, run `python -m marketlens.alerts.price_alerts watch` in another terminal.
+
+| Command | What it does |
+| --- | --- |
+| `/status` | PAPER / LIVE, AUTO_TRADE, Dhan login, kill switch, live runner, last data update, running strategies |
+| `/positions`, `/orders`, `/pnl`, `/strategies`, `/report` | open positions; today's orders (waiting ones with ✅ Confirm / ❌ Reject); P&L against the loss limits; deployments; today's report |
+| `/pause NAME`, `/resume NAME` | pause / resume one deployed strategy (the start of its name is enough) |
+| `/alerts`, `/addalert NIFTY above 25500`, `/delalert 3` | price alerts |
+| `/stop` | kill switch ON: no new orders today (exits still go through) |
+| `/resume_all` | asks first; then kill switch OFF and paused strategies running again |
+| `/squareoff` | asks first; then closes every position, kill switch ON, every strategy stopped |
+| `/login` | today's Dhan login, with the renew steps when it is not valid |
+
+The "yes" buttons of `/resume_all` and `/squareoff` work for 2 minutes only. Which messages you get (signals,
+fills, SL hits, errors, the 15:45 daily report, webhook alerts) is chosen on page 12; live orders waiting for
+your Confirm, the kill switch and price alerts are always sent.
+
+---
+
 ## Frontend (web app, Next.js)
 
 A second way to use MarketLens: a web app in `frontend/` (Next.js + Tailwind CSS). It is being built page
@@ -690,7 +743,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **877 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **897 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and
@@ -816,8 +869,9 @@ default, DEMO data without keys, tests for every calculation).
   python -m marketlens.alerts.price_alerts watch --every 60 # in market hours, with a heartbeat
   python -m marketlens.alerts.price_alerts delete 3
   ```
-- Next: bot commands (status, positions, P&L, stop a strategy, exit all) and answering the Confirm / Reject
-  buttons (today: `python -m marketlens.trading.order_service confirm <signal>`); a page for alerts.
+- ✅ Done: the bot (`python -m marketlens.alerts.bot`, step 16) and page 12 (bot status, test message, which
+  messages are on, price alerts with Check now, message history).
+- Next: the web version of page 12, and starting the bot and the alert watcher with the scheduler.
 
 ### Platform
 - **Web frontend** (`frontend/`, started): each module page in turn, with the API endpoints it needs (option chain, backtests, strategies, orders).

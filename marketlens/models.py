@@ -657,6 +657,14 @@ class DownloadProgress(Base):
     __table_args__ = (UniqueConstraint("dataset", "key", "day"),)
 
 
+class AppSetting(Base):
+    """Settings changed from the app (not secrets: those stay in .env), e.g. which Telegram messages are on."""
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)
+    updated_at: Mapped[dt.datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class ErrorLog(Base):
     """Errors from any module, so the Bot Monitor (module 11) can show them."""
     __tablename__ = "error_log"

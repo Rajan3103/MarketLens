@@ -6,7 +6,8 @@
 Every message is saved in the notifications table with its status:
     sent     Telegram accepted it
     failed   Telegram refused it or could not be reached (the reason is in `error`)
-    skipped  TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set, so nothing was sent
+    skipped  TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are not set, or that kind of message is switched off on the
+             Telegram panel (page 12), so nothing was sent
 Callers never fail because of Telegram or the database. The bot token is never written to the log.
 """
 import datetime as dt
@@ -21,6 +22,19 @@ log = get_logger(__name__)
 API = "https://api.telegram.org/bot{token}/sendMessage"
 SENT, FAILED, SKIPPED = "sent", "failed", "skipped"
 MAX_LENGTH = 4000                     # Telegram allows 4096 characters
+SETTINGS_KEY = "telegram_notifications"
+# Kinds of message you can switch on / off on the Telegram panel, and the events in each
+CATEGORIES = {
+    "signals": ("Signals and strategy events", ("signal", "signal_blocked", "strategy_paused", "strategy_stopped")),
+    "fills": ("Orders placed, filled, rejected, cancelled",
+              ("order_placed", "order_filled", "order_rejected", "order_cancelled")),
+    "sl_hits": ("Stop-loss hits", ("sl_hit",)),
+    "errors": ("Errors", ("error",)),
+    "daily_report": ("Daily report (15:45)", ("daily_report",)),
+    "webhook": ("Webhook alerts (TradingView / Chartink)", ("webhook_alert",)),
+}
+# Always sent, whatever the panel says: you must see these
+ALWAYS_ON = ("confirm_request", "kill_switch", "price_alert", "login_reminder", "test")
 
 
 # True when both Telegram settings are filled in.
@@ -82,9 +96,59 @@ def save_notification(text: str, status: str, error: str | None = None, source: 
         return None
 
 
+# ---------------------------------------------------------------- which messages are on
+
+# The category of an event ("fills", "errors" ...), or None when it cannot be switched off.
+def category_of(event: str | None) -> str | None:
+    if event in ALWAYS_ON:
+        return None
+    return next((name for name, (_, events) in CATEGORIES.items() if event in events), None)
+
+
+# Which categories are on: {"signals": True, ...}. Everything is on until you change it (or without a database).
+def notification_settings(url: str | None = None) -> dict:
+    on = dict.fromkeys(CATEGORIES, True)
+    try:
+        from marketlens.db import get_session
+        from marketlens.models import AppSetting
+        with get_session(url) as session:
+            row = session.get(AppSetting, SETTINGS_KEY)
+            if row is not None:
+                on.update({k: bool(v) for k, v in (row.value or {}).items() if k in CATEGORIES})
+    except Exception as err:
+        log.warning("Could not read the notification settings (all on): %s", err)
+    return on
+
+
+# Switch categories on / off, e.g. {"errors": False}; returns the new settings.
+def set_notification_settings(changes: dict, url: str | None = None) -> dict:
+    from sqlalchemy.dialects.postgresql import insert
+
+    from marketlens.db import get_session
+    from marketlens.models import AppSetting
+    unknown = set(changes) - set(CATEGORIES)
+    if unknown:
+        raise ValueError(f"Unknown notification type(s): {', '.join(sorted(unknown))}")
+    value = {**notification_settings(url), **{k: bool(v) for k, v in changes.items()}}
+    with get_session(url) as session:
+        session.execute(insert(AppSetting).values(key=SETTINGS_KEY, value=value)
+                        .on_conflict_do_update(index_elements=["key"], set_={"value": value}))
+        session.commit()
+    log.info("Telegram notifications: %s", ", ".join(f"{k} {'on' if v else 'off'}" for k, v in value.items()))
+    return value
+
+
+# ---------------------------------------------------------------- sending
+
 # Send a message and save it (sent / failed / skipped); returns True when Telegram accepted it.
+# A message whose kind is switched off on the panel is saved as skipped and not sent.
 def notify(text: str, buttons: list[tuple[str, str]] | None = None, source: str | None = None,
            event: str | None = None, url: str | None = None, timeout: float = 10) -> bool:
+    category = category_of(event)
+    if category and not notification_settings(url)[category]:
+        save_notification(text, SKIPPED, f"Switched off on the Telegram panel ({CATEGORIES[category][0]})",
+                          source, event, url)
+        return False
     status, error = deliver(text, buttons, timeout)
     save_notification(text, status, error, source, event, url)
     return status == SENT

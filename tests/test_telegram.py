@@ -165,3 +165,37 @@ def test_login_reminder_is_saved(db_url, db_session, monkeypatch):
     assert text and "Dhan login is not ready" in text
     row = saved(db_url)[-1]
     assert row["source"] == "login" and row["event"] == "login_reminder" and row["message"] == text
+
+
+# ---------------------------------------------------------------- which messages are on (page 12)
+
+# Events belong to categories; confirm requests, the kill switch and price alerts can never be switched off.
+def test_categories():
+    assert telegram.category_of("sl_hit") == "sl_hits" and telegram.category_of("order_filled") == "fills"
+    assert telegram.category_of("webhook_alert") == "webhook" and telegram.category_of("signal_blocked") == "signals"
+    for event in ("confirm_request", "kill_switch", "price_alert", "login_reminder", "test", None, "reply"):
+        assert telegram.category_of(event) is None
+
+
+# Everything is on until changed; a switched-off kind is saved as skipped (with why) and not sent.
+def test_switched_off_messages(db_url, db_session, fake_telegram):
+    assert telegram.notification_settings(db_url) == dict.fromkeys(telegram.CATEGORIES, True)
+    assert telegram.set_notification_settings({"errors": False, "fills": False}, db_url)["errors"] is False
+    assert telegram.notification_settings(db_url)["fills"] is False and telegram.notification_settings(db_url)["sl_hits"]
+    assert telegram.notify("❗ boom", source="error_log", event="error", url=db_url) is False
+    assert telegram.notify("🔔 confirm?", source="order_service", event="confirm_request", url=db_url) is True
+    assert [m["text"] for m in fake_telegram["messages"]] == ["🔔 confirm?"]
+    muted = saved(db_url)[0]
+    assert muted["status"] == "skipped" and muted["error"] == "Switched off on the Telegram panel (Errors)"
+    with pytest.raises(ValueError, match="Unknown notification type"):
+        telegram.set_notification_settings({"gossip": True}, db_url)
+
+
+# The order service follows the switches too (fills off: a filled order is saved as skipped, not sent).
+def test_order_service_follows_switches(db_url, db_session):
+    telegram.set_notification_settings({"fills": False}, db_url)
+    told = []
+    service = os_.OrderService(url=db_url, notify=lambda text, buttons=None: told.append(text) or True)
+    assert service.tell("✅ filled", event="order_filled") is False and told == []
+    assert service.tell("🛑 kill", event="kill_switch") is True and told == ["🛑 kill"]
+    assert [r["status"] for r in saved(db_url)] == ["skipped", "sent"]
