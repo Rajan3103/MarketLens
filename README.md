@@ -72,14 +72,21 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
   Nifty 50 above its 200-day average else LIQUIDBEES or cash).
 - **No look-ahead:** ranked at a month's (week's) last close, traded at the next day's close (tested).
 - Equity-delivery costs, slippage and capital gains tax (shared with module 9 in `momentum/portfolio.py`).
-- Results against **Nifty 50 buy-and-hold** (and the Nifty 200 Momentum 30 ETF `MOMENTUM` / `MOM30IETF`
-  when stored): value and drawdown charts, CAGR / drawdown / Sharpe / Sortino table, year by year,
-  holdings, every rebalance, trades, tax by year.
+- Results against **Nifty 50 buy-and-hold with dividends (NIFTYBEES)**, the fair comparison since the
+  stocks' prices include dividends too, plus the `^NSEI` price index and the Nifty 200 Momentum 30 ETFs
+  (`MOMENTUM` / `MOM30IETF`) when stored: value and drawdown charts, CAGR / drawdown / Sharpe / Sortino
+  table, year by year, holdings, every rebalance, trades, tax by year.
+- Yahoo's price errors are repaired before ranking and listed under the results: x10 / x100 errors around
+  unit splits (NIFTYBEES, Dec-2019), `^NSEI` rows on NSE holidays (71 of them, with wrong values) and
+  one-day bad prints (e.g. `^NSEI` 11,382 on 06-Apr-2020 when it was about 8,100).
 - Tabs **Backtest** (progress bar, background job), **Current ranks** (historical model output, not
   advice) and **Rebalance history** (buys and sells on each date of a saved run).
-- Missing prices are listed with their dates and downloaded with one button (`sync_prices()`); a start
-  too early for the stored history gets a warning with the earliest fair start.
-- Fast: 10 years of 200 stocks in about 2 s (monthly) to 9 s (weekly, inverse volatility).
+- Missing prices are listed with their dates and downloaded with one button (`sync_prices()`, including
+  the older history when the stored prices start too late); a start too early for the stored history gets a
+  warning with the earliest fair start.
+- Real data, Jan-2016 to Nov-2026, Nifty 200, top 20 monthly: about 6 s; weekly with inverse-volatility
+  weights about 15-20 s. Nifty 50 in the same test: 11.4 % a year (price), 12.3 % with dividends, worst fall
+  -38 % (Mar-2020), which matches the real index.
 - Save to the Strategy Library; the library's **Open in backtester** opens it here (`?strategy=<id>`).
 
 **5. Option Simulator**
@@ -318,9 +325,16 @@ python -c "import datetime as d; from marketlens.ingest.prices import sync_price
 ```
 
 The Momentum Engine page can also do this for you: its **Download missing prices** button syncs the stocks,
-Nifty 50 and the Nifty 200 Momentum 30 ETFs (`MOMENTUM`, `MOM30IETF`) from the first day the settings need.
-`sync_prices` only adds days *after* what is stored, so for a backtest starting in 2016 download from 2014
-the first time (the ranking needs about 13 months of earlier prices).
+Nifty 50, NIFTYBEES and the Nifty 200 Momentum 30 ETFs (`MOMENTUM`, `MOM30IETF`) from the first day the
+settings need. A normal sync only adds days *after* what is stored; to add OLDER history (e.g. a backtest
+from 2016 needs prices from late 2014), use `--backfill`:
+
+```bash
+python scripts/sync_prices.py --universe nifty200 --years 12 --backfill
+```
+
+It downloads the days before the first stored day; if Yahoo has adjusted the prices since (split, bonus),
+the whole history of that symbol is downloaded again so old and new prices match.
 
 The first run downloads everything (about 1.5 minutes for Nifty 200 × 10 years); later runs
 only fetch the missing days. Run it after market close each day. The stock lists live in
@@ -780,7 +794,7 @@ With the virtual environment turned on, run this from the MarketLens folder:
 python -m pytest -rs
 ```
 
-Today: **936 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
+Today: **948 passed, 28 skipped** (the skipped ones are option-pricing cases at the price
 limit, where implied volatility cannot be measured). Add `-v` to see each test by name.
 
 - Database tests use **`TEST_DATABASE_URL`**, a separate database that the tests empty and

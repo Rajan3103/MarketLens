@@ -23,9 +23,9 @@ START = dt.date(2026, 1, 1)
 class FakeYahoo:
     """Pretends to be yf.download. Every weekday has a price; close = base + day number."""
 
-    # base: starting price per ticker; missing: tickers that return nothing.
-    def __init__(self, base: dict, missing=(), bump: float = 0.0):
-        self.base, self.missing, self.bump = base, set(missing), bump
+    # base: starting price per ticker; missing: tickers that return nothing; listed: ticker -> first trading day.
+    def __init__(self, base: dict, missing=(), bump: float = 0.0, listed: dict | None = None):
+        self.base, self.missing, self.bump, self.listed = base, set(missing), bump, listed or {}
         self.calls = []
 
     # Same arguments as yf.download; returns (ticker, field) columns like the real one.
@@ -37,10 +37,13 @@ class FakeYahoo:
         for t in tickers:
             if t in self.missing or t not in self.base:
                 continue
-            n = np.array([(d.date() - START).days for d in days], dtype=float)
+            mine = days[days >= pd.Timestamp(self.listed.get(t, dt.date(1990, 1, 1)))]
+            if mine.empty:
+                continue
+            n = np.array([(d.date() - START).days for d in mine], dtype=float)
             close = self.base[t] + n + self.bump
             frames[t] = pd.DataFrame({"Open": close - 1, "High": close + 2, "Low": close - 2,
-                                      "Close": close, "Volume": 1000.0}, index=days)
+                                      "Close": close, "Volume": 1000.0}, index=mine)
         if not frames:
             return pd.DataFrame()
         return pd.concat(frames, axis=1)
@@ -189,3 +192,57 @@ def test_sync_progress(db_url, db_session, fake_yahoo):
     sync_prices(["AAA", "BBB"], START, dt.date(2026, 1, 9), url=db_url,
                 progress=lambda done, total, text: steps.append((done, total)))
     assert steps == [(1, 1)]
+
+
+# ---------------------------------------------------------------------
+# Older history (backfill)
+# ---------------------------------------------------------------------
+
+# The first stored day of AAA.
+def first_day(session):
+    return session.scalar(select(func.min(DailyPrice.date)))
+
+
+# A normal sync never goes back before the stored history; backfill adds the older days once.
+def test_backfill_adds_older_history(db_url, db_session, fake_yahoo):
+    fake_yahoo(base={"AAA.NS": 100})
+    sync_prices(["AAA"], dt.date(2026, 1, 15), dt.date(2026, 1, 30), url=db_url)
+    assert first_day(db_session) == dt.date(2026, 1, 15)
+    sync_prices(["AAA"], dt.date(2025, 12, 1), dt.date(2026, 1, 30), url=db_url)
+    assert first_day(db_session) == dt.date(2026, 1, 15)               # the daily sync does not backfill
+
+    fake = fake_yahoo(base={"AAA.NS": 100})
+    summary = sync_prices(["AAA"], dt.date(2025, 12, 1), dt.date(2026, 1, 30), url=db_url, backfill=True)
+    assert summary.backfilled == ["AAA"] and summary.refreshed == []
+    assert fake.calls[-1][1] == dt.date(2025, 12, 1) and fake.calls[-1][2] == dt.date(2026, 1, 16)
+    assert first_day(db_session) == dt.date(2025, 12, 1)
+    days = pd.bdate_range("2025-12-01", "2026-01-30")
+    assert db_session.scalar(select(func.count()).select_from(DailyPrice)) == len(days)   # no gaps, no doubles
+    assert "1 older history added" in str(summary)
+
+    again = fake_yahoo(base={"AAA.NS": 100})
+    assert sync_prices(["AAA"], dt.date(2025, 12, 1), dt.date(2026, 1, 30), url=db_url, backfill=True).backfilled == []
+    assert all(call[1] != dt.date(2025, 12, 1) for call in again.calls)              # nothing older to fetch
+
+
+# A stock listed later has nothing older: reported, not failed.
+def test_backfill_listed_later(db_url, db_session, fake_yahoo):
+    fake_yahoo(base={"NEW.NS": 50}, listed={"NEW.NS": dt.date(2026, 1, 12)})
+    sync_prices(["NEW"], dt.date(2026, 1, 12), dt.date(2026, 1, 30), url=db_url)
+    fake_yahoo(base={"NEW.NS": 50}, listed={"NEW.NS": dt.date(2026, 1, 12)})
+    summary = sync_prices(["NEW"], dt.date(2025, 12, 1), dt.date(2026, 1, 30), url=db_url, backfill=True)
+    assert summary.no_older == ["NEW"] and summary.backfilled == [] and summary.failed == []
+    assert first_day(db_session) == dt.date(2026, 1, 12)
+
+
+# Yahoo adjusted the prices since they were stored (split / bonus): old and new parts must match, so the
+# whole history is downloaded again.
+def test_backfill_after_adjustment_downloads_everything(db_url, db_session, fake_yahoo):
+    fake_yahoo(base={"AAA.NS": 100})
+    sync_prices(["AAA"], dt.date(2026, 1, 15), dt.date(2026, 1, 30), url=db_url)
+    fake_yahoo(base={"AAA.NS": 100}, bump=-50)
+    summary = sync_prices(["AAA"], dt.date(2025, 12, 1), dt.date(2026, 1, 30), url=db_url, backfill=True)
+    assert summary.backfilled == ["AAA"] and "AAA" in summary.refreshed
+    closes = dict(db_session.execute(select(DailyPrice.date, DailyPrice.close)).all())
+    assert float(closes[dt.date(2026, 1, 30)]) == 100 + 29 - 50                       # the newer part, adjusted too
+    assert float(closes[dt.date(2025, 12, 1)]) == 100 - 31 - 50

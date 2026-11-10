@@ -28,6 +28,7 @@ UNIVERSE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "univers
 UNIVERSES = ("nifty50", "nifty200", "etfs")
 BATCH_SIZE = 50            # tickers per yfinance request (bigger requests fail more often)
 ADJUST_TOLERANCE = 0.005   # 0.5%: bigger change in an old close = split/bonus/dividend adjustment
+BACKFILL_GAP_DAYS = 10     # backfill only when the stored history starts more than this after `start`
 
 
 @dataclass
@@ -39,12 +40,15 @@ class SyncSummary:
     up_to_date: list = field(default_factory=list)
     refreshed: list = field(default_factory=list)   # history re-downloaded after an adjustment
     failed: list = field(default_factory=list)
+    backfilled: list = field(default_factory=list)  # older history added before the first stored day
+    no_older: list = field(default_factory=list)    # backfill asked, but nothing older exists (listed later)
 
     # One line that sums everything up.
     def __str__(self) -> str:
         return (f"{self.symbols} symbols: {self.rows_upserted:,} rows saved, "
                 f"{self.new_instruments} new instruments, {len(self.up_to_date)} already up to date, "
-                f"{len(self.refreshed)} re-downloaded after adjustment, {len(self.failed)} failed"
+                f"{len(self.refreshed)} re-downloaded after adjustment, {len(self.backfilled)} older history added, "
+                f"{len(self.failed)} failed"
                 + (f" ({', '.join(self.failed)})" if self.failed else ""))
 
 
@@ -202,12 +206,14 @@ def _sync_batch(session, symbols: list[str], ids: dict, start: dt.date, end: dt.
 # Bring the database up to date for these symbols between start and end.
 def sync_prices(symbols: list[str], start: dt.date, end: dt.date | None = None,
                 instrument_type: str = "EQUITY", names: dict | None = None,
-                url: str | None = None, progress=None) -> SyncSummary:
+                url: str | None = None, progress=None, backfill: bool = False) -> SyncSummary:
     """1. adds missing instruments   2. finds each one's last stored date
     3. downloads only the missing dates (yfinance, .NS)   4. upserts   5. logs a summary.
 
     url: another database (the tests use TEST_DATABASE_URL); normally leave it empty.
     progress: optional function(done, total, text) for a progress bar (one step per 50 symbols).
+    backfill: also download the history BEFORE the first stored day, back to `start` (for a symbol stored
+              from 2016 when a backtest needs 2014). Off by default: the daily sync only adds new days.
     """
     end = end or dt.date.today()
     symbols = list(dict.fromkeys(s.strip().upper() for s in symbols if s.strip()))
@@ -228,13 +234,75 @@ def sync_prices(symbols: list[str], start: dt.date, end: dt.date | None = None,
 
         batches = [(first, group[i:i + BATCH_SIZE]) for first, group in sorted(groups.items())
                    for i in range(0, len(group), BATCH_SIZE)]
+        older = _older_batches(session, symbols, ids, start) if backfill else []
+        steps = len(batches) + len(older)
         for n, (first, batch) in enumerate(batches, start=1):
             _sync_batch(session, batch, ids, first, end, stored, start, summary)
             if progress:
-                progress(n, len(batches), f"batch {n} of {len(batches)}")
+                progress(n, steps, f"batch {n} of {steps}")
+        for n, (until, batch) in enumerate(older, start=len(batches) + 1):
+            _backfill_batch(session, batch, ids, start, until, end, summary)
+            if progress:
+                progress(n, steps, f"older history, batch {n} of {steps}")
 
     log.info("Price sync %s to %s: %s", start, end, summary)
     return summary
+
+
+# Symbols whose stored history starts well after `start`, grouped by their first stored day: [(first day, symbols)].
+def _older_batches(session, symbols: list[str], ids: dict, start: dt.date) -> list[tuple]:
+    firsts = first_stored(session, [ids[s] for s in symbols])
+    late: dict[dt.date, list[str]] = {}
+    for symbol in symbols:
+        first = firsts.get(ids[symbol])
+        if first is not None and first > start + dt.timedelta(days=BACKFILL_GAP_DAYS):
+            late.setdefault(first, []).append(symbol)
+    return [(first, group[i:i + BATCH_SIZE]) for first, group in sorted(late.items())
+            for i in range(0, len(group), BATCH_SIZE)]
+
+
+# The first stored date of each instrument: {instrument_id: date}.
+def first_stored(session, instrument_ids: list[int]) -> dict:
+    rows = session.execute(select(DailyPrice.instrument_id, func.min(DailyPrice.date))
+                           .where(DailyPrice.instrument_id.in_(instrument_ids))
+                           .group_by(DailyPrice.instrument_id)).all()
+    return dict(rows)
+
+
+# Download the history BEFORE the first stored day (start .. `until`) and save it.
+def _backfill_batch(session, symbols: list[str], ids: dict, start: dt.date, until: dt.date, end: dt.date,
+                    summary: SyncSummary) -> None:
+    """The first stored day is downloaded again and compared: when Yahoo has adjusted the prices since we stored
+    them (split, bonus, dividend), the whole history is downloaded again so old and new prices match."""
+    tickers = [yf_ticker(s) for s in symbols]
+    try:
+        data = download_prices(tickers, start, until)
+    except Exception as err:
+        log.error("Older history failed for %d symbols: %s", len(symbols), err)
+        summary.failed.extend(symbols)
+        return
+    for symbol, ticker in zip(symbols, tickers):
+        frame = ticker_frame(data, ticker)
+        iid = ids[symbol]
+        older = frame[[pd.Timestamp(d).date() < until for d in frame.index]] if len(frame) else frame
+        if older.empty:
+            summary.no_older.append(symbol)            # listed later: nothing older exists
+            continue
+        stored_close = session.scalar(select(DailyPrice.close).where(DailyPrice.instrument_id == iid,
+                                                                     DailyPrice.date == until))
+        if stored_close is not None and history_was_adjusted(float(stored_close), frame, until):
+            log.info("%s: prices were adjusted since they were stored, downloading %s to %s again", symbol, start, end)
+            try:
+                frame = ticker_frame(download_prices([ticker], start, end), ticker)
+            except Exception as err:
+                log.error("%s: full re-download failed: %s", symbol, err)
+                summary.failed.append(symbol)
+                continue
+            summary.refreshed.append(symbol)
+            older = frame
+        summary.rows_upserted += upsert(session, DailyPrice, frame_to_rows(older, iid), ["instrument_id", "date"])
+        summary.backfilled.append(symbol)
+    session.commit()
 
 
 # Read close prices from PostgreSQL as a table: one row per date, one column per symbol.
