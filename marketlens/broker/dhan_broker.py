@@ -16,7 +16,7 @@ Safety rules (tested in tests/test_dhan_broker.py):
 - At most MAX_ORDERS_PER_SECOND orders are sent per second (Dhan's limit is also enforced by Dhan).
 - The access token never appears in a log line or an error message (scrub()).
 - Symbols are mapped to Dhan's Security ID with the instrument master (dhan_instruments.py).
-- Dhan only accepts orders from your whitelisted static IP (see the README, AWS step).
+- Dhan only accepts orders from your whitelisted static IP (see docs/GUIDE.md, AWS step).
 """
 import datetime as dt
 import re

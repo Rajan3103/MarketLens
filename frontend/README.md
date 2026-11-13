@@ -1,7 +1,7 @@
 # MarketLens web frontend (Next.js)
 
 The web app for MarketLens. It shows the pages; the Python backend API (`python -m marketlens.api`)
-does all the work. See the **Frontend** section of the main `README.md` one folder up for setup.
+does all the work. See the **Frontend** section of `docs/GUIDE.md` (in the project folder) for setup.
 
 ```bash
 npm install        # once, and after package.json changes

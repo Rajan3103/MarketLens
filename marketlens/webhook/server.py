@@ -17,7 +17,7 @@ For every alert:
      the order service: paper (virtual money) by default.
 
 TradingView only sends alerts to a public internet address (port 80 / 443), so real alerts arrive
-after the AWS step; on this computer, test it with a fake alert (see README).
+after the AWS step; on this computer, test it with a fake alert (see docs/GUIDE.md, step 10).
 """
 import argparse
 import datetime as dt

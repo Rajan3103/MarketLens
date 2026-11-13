@@ -479,12 +479,12 @@ def main(argv: list[str] | None = None) -> int:
     if not config.is_set(config.TELEGRAM_BOT_TOKEN):
         print("TELEGRAM_BOT_TOKEN is not set in .env, so the bot cannot start.\n"
               "Make a bot with @BotFather, put its token in .env as TELEGRAM_BOT_TOKEN and your chat id as "
-              "TELEGRAM_CHAT_ID (see the README: 'Create your bot with @BotFather and find your chat ID').")
+              "TELEGRAM_CHAT_ID (see docs/GUIDE.md, step 16: 'Create your bot with @BotFather and find your chat ID').")
         return 1
     if not config.is_set(config.TELEGRAM_CHAT_ID):
         print("TELEGRAM_CHAT_ID is not set in .env, so the bot would not answer anyone.\n"
               "Send any message to your bot, then open https://api.telegram.org/bot<TOKEN>/getUpdates and copy "
-              "\"chat\":{\"id\": ...} into .env as TELEGRAM_CHAT_ID (see the README).")
+              "\"chat\":{\"id\": ...} into .env as TELEGRAM_CHAT_ID (see docs/GUIDE.md, step 16).")
         return 1
     print(f"MarketLens Telegram bot started ({config.TRADING_MODE.upper()} mode). It answers chat "
           f"{config.TELEGRAM_CHAT_ID} only. Press Ctrl+C to stop.", flush=True)

@@ -2,7 +2,7 @@
 
 Bot status and a test message, which Telegram messages are switched on, price alerts (add, delete, check now)
 and the history of every message (sent / failed / skipped). The bot itself runs on its own:
-python -m marketlens.alerts.bot (see the README: "Create your bot with @BotFather and find your chat ID").
+python -m marketlens.alerts.bot (see docs/GUIDE.md, step 16: "Create your bot with @BotFather and find your chat ID").
 """
 import pandas as pd
 import streamlit as st
