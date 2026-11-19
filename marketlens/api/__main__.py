@@ -5,7 +5,7 @@
     python -m marketlens.api --port 8010
 
 Auto-reload (restart when a file changes) is on when developing on your PC, i.e. when SERVER_STATIC_IP
-is empty in .env; on the AWS server it is off. Open http://127.0.0.1:8000/docs to try every endpoint.
+is empty in .env; on your server it is off. Open http://127.0.0.1:8000/docs to try every endpoint.
 """
 import argparse
 

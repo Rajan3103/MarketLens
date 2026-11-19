@@ -170,6 +170,8 @@ def snapshot_from_dhan(client: DhanDataClient, stock_symbols: list[str], names: 
 # Rows of (symbol, name, last, previous close) -> table with change columns for the cards.
 def _table(rows: list[tuple]) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=["symbol", "name", "last", "prev_close"])
+    # Always numbers: a missing price is NaN (not None), even when every price is missing
+    df[["last", "prev_close"]] = df[["last", "prev_close"]].astype(float)
     df["change"] = df["last"] - df["prev_close"]
     df["pct_change"] = df["change"] / df["prev_close"] * 100
     return df[COLUMNS]

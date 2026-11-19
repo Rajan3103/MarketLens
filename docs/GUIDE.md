@@ -14,7 +14,7 @@ note in one Strategy Library. It has a live **Dhan** broker behind an order serv
 risk rules before every order (daily loss kill switch, lot sizes, capital, open positions, Dhan login)
 and asks for your Telegram confirmation for live orders; page 11 deploys strategies and monitors them.
 Next: a Telegram bot and
-an AWS server.
+your own server (Ubuntu 24.04 ARM64).
 
 > Everything in this app is historical analysis for learning.
 > It is **not** investment advice or a live trading recommendation.
@@ -116,7 +116,7 @@ The menu has **Home**, **Settings & Status** and 12 modules in 4 groups.
 - **Pine Script export:** the same rules as TradingView Pine Script v6 (inputs for every setting,
   Indian costs, alert() calls with MarketLens webhook JSON and a secret placeholder). Every
   generated script is checked by a validator; download as .pine; 5-step TradingView guide.
-- **Webhook alerts:** your webhook address (this computer now, the AWS address later), whether
+- **Webhook alerts:** your webhook address (this computer now, your server's address later), whether
   `WEBHOOK_SECRET` is set, the JSON for TradingView and Chartink, and the last 50 events.
 - **Save to Strategy Library**, optionally with **Auto**: webhook alerts naming the strategy then
   place paper orders by themselves.
@@ -420,10 +420,10 @@ python -m marketlens.trading.forward --strategy 3 --once     # one cycle, for te
    A Chartink-style alert: `-Uri "http://localhost:8000/webhook/chartink?secret=YOUR_SECRET"` with
    `@{ stocks = "RELIANCE,TCS"; trigger_prices = "2501.5,3900.1"; scan_name = "EMA cross" }`.
 
-**Why real TradingView alerts only work after the AWS step:** TradingView sends webhooks from the
+**Why real TradingView alerts only work after the server step:** TradingView sends webhooks from the
 internet, so the address must be public, use **port 80 (http) or 443 (https)**, and HTTPS is
 strongly recommended so the secret is encrypted on the way. `localhost` is only reachable from your
-own computer. On the AWS server (with its static IP, a domain name and an HTTPS certificate) the
+own computer. On your server (with its static IP, a domain name and an HTTPS certificate) the
 same receiver runs behind HTTPS and TradingView can reach it. Until then, test with the fake alerts
 above.
 
@@ -485,7 +485,7 @@ holdings and funds, and **exit all**. Before **every** call it checks that the D
 and live orders are also saved in the `orders` table (mode `live`) for the journal (page 10).
 
 Dhan only accepts orders from your **whitelisted static IP** (web.dhan.co → Access DhanHQ APIs),
-which is why live trading is meant to run on the AWS server. Webhook "auto" orders (module 7) stay
+which is why live trading is meant to run on your server. Webhook "auto" orders (module 7) stay
 paper-only until they are moved onto the order service below.
 
 ### 13. The order service (risk checks before every order)
@@ -643,7 +643,7 @@ your Confirm, the kill switch and price alerts are always sent.
 ### 17. Run the daily jobs automatically (scheduler)
 
 One process runs every routine job at its time (India time). Start it in its own terminal and leave it running
-(on AWS later, as a service):
+(on your server later, as a service):
 
 ```bash
 python -m marketlens.scheduler                      # Ctrl+C stops it
@@ -872,7 +872,7 @@ default, DEMO data without keys, tests for every calculation).
 
 ### 7. Signals & Indicator Strategy Builder (remaining)
 - Forward-testing rules built on this page (module 6 runs EMA-cross / RSI strategies today).
-- A public HTTPS address for the webhook receiver (part of the AWS step).
+- A public HTTPS address for the webhook receiver (part of the server step).
 
 ### 8. Momentum Engine Backtest
 - ✅ Done: the ranking engine (`marketlens/momentum/ranking.py`). Scores over 63 / 126 / 252
@@ -929,7 +929,7 @@ default, DEMO data without keys, tests for every calculation).
 ### Platform
 - **Web frontend** (`frontend/`, started): each module page in turn, with the API endpoints it needs (option chain, backtests, strategies, orders).
 - **Scheduler:** daily price sync, option-data downloads after market close, morning checks.
-- **AWS deployment** (Mumbai region, static IP for Dhan orders) with the app and background
+- **Server deployment** (Ubuntu 24.04 ARM64, static IP for Dhan orders) with the app and background
   processes running all day.
 - Index futures in the backtester; changing lot sizes over history.
 

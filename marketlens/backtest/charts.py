@@ -77,8 +77,9 @@ def calendar_table(result: BacktestResult) -> pd.DataFrame:
     if daily.empty:
         return pd.DataFrame(columns=["date", "week", "weekday", "pnl"])
     dates = pd.to_datetime(pd.Series(daily.index))
-    return pd.DataFrame({"date": dates.dt.date, "week": (dates - pd.to_timedelta(dates.dt.weekday, "D")).dt.date,
-                         "weekday": dates.dt.weekday, "pnl": daily.values})
+    day_of_week = dates.dt.day_of_week                      # 0 = Monday (dt.weekday is deprecated in pandas)
+    return pd.DataFrame({"date": dates.dt.date, "week": (dates - pd.to_timedelta(day_of_week, "D")).dt.date,
+                         "weekday": day_of_week, "pnl": daily.values})
 
 
 # Calendar heatmap: one column per week, one row per weekday, colour = that day's P&L.

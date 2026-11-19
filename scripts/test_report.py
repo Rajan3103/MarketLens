@@ -8,7 +8,8 @@ It writes three files into reports/tests/ (the date and time are in each name, s
     test_results_<when>.csv   one row per test: module, test, what it checks, status, seconds, message
     test_summary_<when>.csv   one row per test file: total, passed, failed, errors, skipped, seconds
     test_run_<when>.csv       the run itself: date, Python, operating system, git commit, totals
-It also keeps pytest's own XML (test_results_<when>.xml).
+It also keeps pytest's own XML (test_results_<when>.xml), and writes a short Markdown summary for the project
+report: reports/TEST_SUMMARY.md (always the latest run) and reports/tests/test_summary_<when>.md.
 
 Database tests use TEST_DATABASE_URL only (never your real database), as always.
 """
@@ -112,6 +113,31 @@ def write_csv(path: Path, rows: list[dict], columns: list[str]):
         writer.writerows(rows)
 
 
+# A short Markdown summary for the project report: totals, environment, one line per test file, skips, failures.
+def markdown_summary(run: dict, summary: list[dict], rows: list[dict]) -> str:
+    total = summary[-1]
+    lines = ["# MarketLens: test summary", "",
+             f"Run on {run['date']} · Python {run['python']} · {run['os']} · commit `{run['git_commit'] or '-'}`", "",
+             f"**{total['passed']} passed, {total['failed']} failed, {total['errors']} errors, "
+             f"{total['skipped']} skipped** in {total['seconds']:.0f} s "
+             f"({total['total']} tests in {len(summary) - 1} files).", "",
+             "| Test file | Tests | Passed | Failed | Errors | Skipped | Seconds |",
+             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    lines += [f"| {s['module']} | {s['total']} | {s['passed']} | {s['failed']} | {s['errors']} | {s['skipped']} | "
+              f"{s['seconds']:.1f} |" for s in summary[:-1]]
+    skipped = defaultdict(int)
+    for r in rows:
+        if r["status"] == "skipped":
+            skipped[r["message"] or "no reason given"] += 1
+    if skipped:
+        lines += ["", "## Skipped (and why)", ""] + [f"- {n} x {why}" for why, n in sorted(skipped.items())]
+    broken = [r for r in rows if r["status"] in ("failed", "error")]
+    lines += ["", "## Failures", ""] + ([f"- `{r['module']}::{r['test']}`: {r['message'][:200]}" for r in broken]
+                                        or ["None."])
+    lines += ["", "Tests never use the internet or the real database (TEST_DATABASE_URL only).", ""]
+    return "\n".join(lines)
+
+
 # Run the tests and write the CSV files; returns pytest's exit code (0 = all passed).
 def main(argv=None) -> int:
     args = parse_args(argv)
@@ -138,6 +164,10 @@ def main(argv=None) -> int:
     for name, (data, columns) in files.items():
         write_csv(out / name, data, columns)
         print("Saved", out / name)
+    text = markdown_summary(run[0], summary, rows)
+    for path in (out / f"test_summary_{when}.md", ROOT / "reports" / "TEST_SUMMARY.md"):   # dated copy + latest
+        path.write_text(text, encoding="utf-8")
+        print("Saved", path)
     print(f"{total['passed']} passed, {total['failed']} failed, {total['errors']} errors, "
           f"{total['skipped']} skipped in {total['seconds']:.0f} s")
     return code

@@ -44,7 +44,7 @@ def test_parse_chartink():
         wh.parse_chartink({"stocks": ""}, SECRET, SECRET)
 
 
-# localhost now, the AWS static IP later; the real secret is never in the addresses.
+# localhost now, the server's static IP later; the real secret is never in the addresses.
 def test_urls(monkeypatch):
     monkeypatch.setattr(config, "SERVER_STATIC_IP", "")
     monkeypatch.setattr(config, "API_PORT", 8000)

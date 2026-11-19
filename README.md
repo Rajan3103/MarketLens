@@ -347,7 +347,7 @@ $ cd frontend && npm run lint && npm run build
 [ ] Login for the web app and a key check on the API (the Streamlit app already has a password)
 [ ] Point-in-time Nifty 200 membership for the momentum engine (removes survivorship bias)
 [ ] Paper-trade the monthly momentum / ETF picks automatically
-[ ] AWS deployment: services, HTTPS for webhooks, static IP for Dhan live orders
+[ ] Server deployment (Ubuntu 24.04 ARM64): services, HTTPS for webhooks, static IP for Dhan orders
 [ ] CI on GitHub Actions (tests on every push) · ruff for Python linting
 [ ] Next year's NSE holiday list each December (data/nse_holidays.csv)
 ```

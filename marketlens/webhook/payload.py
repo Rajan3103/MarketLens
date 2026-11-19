@@ -30,7 +30,7 @@ class SecretError(ValueError):
     """The secret is wrong or missing (the server answers 401)."""
 
 
-# The address alerts are sent to: this computer now, the AWS server's static IP once it is set.
+# The address alerts are sent to: this computer now, your server's static IP once it is set.
 def base_url() -> str:
     host = config.SERVER_STATIC_IP if config.is_set(config.SERVER_STATIC_IP) else "localhost"
     return f"http://{host}:{config.API_PORT}"

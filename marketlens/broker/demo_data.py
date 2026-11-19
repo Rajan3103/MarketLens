@@ -217,6 +217,8 @@ class DemoDataClient:
         rows = []
         for k in range(-STRIKES_EACH_SIDE, STRIKES_EACH_SIDE + 1):
             strike = atm + k * step
+            if strike <= 0:                    # a very low price with a fixed strike gap: no strike below zero
+                continue
             vol = smile_vol(base_vol, spot, strike)
             # Open interest: calls pile up above the spot, puts below; round strikes get more
             round_bonus = 1.6 if strike % (step * 2) == 0 else 1.0

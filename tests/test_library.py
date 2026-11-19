@@ -5,6 +5,7 @@ The table functions are tested with hand-made rows; the save / load functions us
 """
 import datetime as dt
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -127,7 +128,7 @@ def test_filters():
 
 def test_screenshot_checks(tmp_path):
     path = lib.save_screenshot("order:12", "chart.PNG", b"\x89PNG data", folder=tmp_path)
-    assert path.endswith(".png") and "order_12_" in path and open(path, "rb").read() == b"\x89PNG data"
+    assert path.endswith(".png") and "order_12_" in path and Path(path).read_bytes() == b"\x89PNG data"
     with pytest.raises(ValueError, match="image"):
         lib.save_screenshot("order:12", "notes.exe", b"x", folder=tmp_path)
     with pytest.raises(ValueError, match="MB"):

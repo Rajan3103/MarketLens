@@ -125,8 +125,9 @@ SQUARE_OFF_ON_KILL = get_bool("SQUARE_OFF_ON_KILL", False)
 # Live orders waiting for your Telegram Confirm are cancelled after this many minutes
 CONFIRM_TIMEOUT_MIN = get_number("CONFIRM_TIMEOUT_MIN", 5, int, minimum=1)
 
-# ---- AWS server (used later, when the app runs on AWS) ----
-AWS_REGION = get_str("AWS_REGION", "ap-south-1")      # ap-south-1 = Mumbai
+# ---- Your server (Ubuntu 24.04 ARM64, later) ----
+# Old setting, still shown by the Streamlit Settings page; it goes away with Streamlit (Prompt 71).
+AWS_REGION = get_str("AWS_REGION", "ap-south-1")
 # Dhan only accepts ORDERS from a whitelisted static IP (SEBI rule); reading data works without
 SERVER_STATIC_IP = get_str("SERVER_STATIC_IP")
 
