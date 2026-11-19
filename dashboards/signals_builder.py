@@ -282,8 +282,8 @@ with hook_tab:
     urls = wh.webhook_urls()
     st.markdown("**Your webhook addresses**")
     st.code(urls["tradingview"], language=None)
-    st.caption("TradingView. " + ("This is your AWS server address." if config.is_set(config.SERVER_STATIC_IP) else
-                                  "This computer for now; it becomes your AWS address once SERVER_STATIC_IP is set. "
+    st.caption("TradingView. " + ("This is your server address." if config.is_set(config.SERVER_STATIC_IP) else
+                                  "This computer for now; it becomes your server address once SERVER_STATIC_IP is set. "
                                   "TradingView can only reach a public address."))
     st.code(urls["chartink"], language=None)
     st.caption("Chartink: replace the placeholder after secret= with your WEBHOOK_SECRET.")

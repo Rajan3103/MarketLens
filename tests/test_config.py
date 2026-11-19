@@ -116,7 +116,7 @@ def test_get_number_maximum(monkeypatch, text, expected):
 def test_new_settings():
     assert isinstance(config.WEBHOOK_PORT, int) and 1 <= config.WEBHOOK_PORT <= 65535
     assert isinstance(config.MAX_OPEN_POSITIONS, int) and config.MAX_OPEN_POSITIONS >= 1
-    assert config.AWS_REGION
+    assert not hasattr(config, "AWS_REGION")           # the old AWS setting is gone
     assert ":CHANGE_ME@" not in "postgresql+psycopg://marketlens@localhost:5432/marketlens"
 
 

@@ -53,6 +53,161 @@ class Health(BaseModel):
     demo: bool             # True = DEMO data is shown (no Dhan keys)
 
 
+# ---------------------------------------------------------------- market clock and symbol search
+
+class MarketStatus(BaseModel):
+    """GET /api/market/status: open, pre-open, closed or holiday, in India time."""
+    state: str                     # open | pre_open | closed | holiday
+    label: str                     # Open | Pre-open | Closed | Holiday
+    reason: str                    # e.g. "NSE holiday: Diwali" or "After the close (15:30)"
+    now: str                       # current IST time (ISO)
+    next_open: str | None          # next 09:15 opening (ISO, IST)
+    closes_at: str | None = None   # 15:30 today, only while open
+    list_ends: str | None          # last date in data/nse_holidays.csv
+    warning: str | None = None     # set when the holiday list has run out
+
+
+class SymbolMatch(BaseModel):
+    """One type-ahead answer."""
+    symbol: str                    # RELIANCE, NIFTYBEES or ^NSEI
+    yahoo: str                     # the Yahoo Finance ticker for /api/market/history (RELIANCE.NS)
+    name: str
+    kind: str                      # stock | etf | index
+    lists: list[str]               # nifty50, nifty200, etfs (empty for an index)
+
+
+class SymbolSearch(BaseModel):
+    """GET /api/market/symbols?q=..."""
+    query: str
+    matches: list[SymbolMatch]
+
+
+# ---------------------------------------------------------------- settings and scheduler
+
+class Message(BaseModel):
+    """A warning or note to show on the page."""
+    level: str                     # success | info | warning | error
+    text: str
+
+
+class KeyRow(BaseModel):
+    """One key: set or not, and what it unlocks (never the value)."""
+    name: str
+    set: bool
+    unlocks: str
+
+
+class DatabaseCheck(BaseModel):
+    """The database connection (the address never shows its password)."""
+    status: str                    # ok | fail
+    message: str
+    hint: str | None = None        # what to do when it failed
+
+
+class SettingsStatus(BaseModel):
+    """GET /api/settings/status: keys, trading mode, database, and the page's warnings."""
+    intro: str
+    keys: list[KeyRow]
+    missing_keys: int
+    trading_mode: str              # PAPER | LIVE
+    trading_mode_message: Message
+    auto_trade: bool
+    demo: bool
+    database: DatabaseCheck
+    messages: list[Message]
+
+
+class SettingRow(BaseModel):
+    """One non-secret setting."""
+    name: str
+    value: str
+
+
+class OtherSettings(BaseModel):
+    """GET /api/settings/other."""
+    settings: list[SettingRow]
+
+
+class BackupInfo(BaseModel):
+    """GET /api/settings/backups."""
+    folder: str
+    count: int                     # backups kept now
+    keep: int                      # the newest this many are kept
+    last_file: str | None
+    last_time: str | None          # IST (ISO)
+    size_mb: float | None
+    pg_dump_found: bool
+    schedule: str                  # e.g. "Sunday 10:00"
+
+
+class SchedulerState(BaseModel):
+    """Is the scheduler process running?"""
+    state: str                     # alive | never | stale | unknown
+    text: str
+    start_command: str
+
+
+class SchedulerJob(BaseModel):
+    """One scheduled job and its last run (from the scheduler_runs table, migration 0016)."""
+    id: str
+    job: str                       # the job's name in words
+    when: str                      # e.g. "08:30 Mon-Fri"
+    next_run: str | None           # IST (ISO)
+    last_run: str | None
+    status: str                    # ok | failed | skipped | running | never run | unknown
+    result: str
+
+
+class Holiday(BaseModel):
+    """One NSE trading holiday."""
+    date: str
+    name: str
+
+
+class HolidayInfo(BaseModel):
+    """The holiday list the market jobs follow."""
+    count: int
+    upcoming: list[Holiday]
+    list_ends: str | None
+    warning: str | None = None
+    note: str
+
+
+class SchedulerJobs(BaseModel):
+    """GET /api/scheduler/jobs."""
+    scheduler: SchedulerState
+    database: bool                 # False = last runs unknown (no database)
+    jobs: list[SchedulerJob]
+    holidays: HolidayInfo
+
+
+class JobStarted(BaseModel):
+    """A background job was started: follow it at GET /api/jobs/{job_id}."""
+    job_id: str
+    job: str
+    name: str
+
+
+class ModuleRow(BaseModel):
+    """One module on the Home page."""
+    group: str
+    number: int
+    name: str
+    what: str
+    status: str
+
+
+class HomeContent(BaseModel):
+    """GET /api/home: the Home page's text and module table."""
+    title: str
+    subtitle: str
+    help: str
+    modules: list[ModuleRow]
+    tip: str
+    note: str
+    historical: bool
+
+
 # One cell as a JSON-friendly value.
 def to_json_value(value):
     if value is None:

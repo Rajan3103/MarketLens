@@ -73,11 +73,9 @@ def coming_soon(module: str, planned: list[str]):
 # Show a green PAPER or red LIVE banner from TRADING_MODE in .env.
 def trading_mode_banner():
     """Remind the user whether orders use virtual or real money."""
-    if config.TRADING_MODE == "live":
-        st.error("Mode: LIVE. Orders use real money.")
-    else:
-        st.success("Mode: PAPER. Orders use virtual money only. "
-                   "Set TRADING_MODE=live in .env to change.")
+    from marketlens.settings_info import trading_mode_message
+    level, text = trading_mode_message()                  # the same text the web API sends
+    (st.error if level == "error" else st.success)(text)
 
 
 # Tell the user whether the keys a page needs are filled in.

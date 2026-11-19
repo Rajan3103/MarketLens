@@ -30,6 +30,26 @@ def no_internet_prices(monkeypatch):
     monkeypatch.setattr(yfinance, "download", blocked)
 
 
+# Tests never touch the real database: DATABASE_URL becomes a blocked address, and asking for it fails at once.
+# Code that forgets to pass the test database (url=None) therefore fails loudly here instead of writing to
+# your real data. The db_url fixture below gives tests the separate TEST_DATABASE_URL.
+BLOCKED_DATABASE_URL = "postgresql+psycopg://tests-must-not-use-the-real-database@127.0.0.1:9/blocked"
+REAL_DATABASE_URL = config.DATABASE_URL         # remembered before it is blocked, for the check in db_url
+
+
+@pytest.fixture(autouse=True)
+def no_real_database(monkeypatch):
+    from marketlens import db
+    real_get_engine = db.get_engine
+
+    def guarded(url=None):
+        if (url or config.DATABASE_URL) == BLOCKED_DATABASE_URL:
+            raise ConnectionError("Tests must not use the real database: pass the test database URL (db_url).")
+        return real_get_engine(url)
+    monkeypatch.setattr(config, "DATABASE_URL", BLOCKED_DATABASE_URL)
+    monkeypatch.setattr(db, "get_engine", guarded)
+
+
 # Every test starts with empty price caches and no remembered wrong passwords or logouts.
 @pytest.fixture(autouse=True)
 def fresh_caches():
@@ -61,7 +81,7 @@ def db_url():
     url = config.TEST_DATABASE_URL
     if not url:
         pytest.skip("TEST_DATABASE_URL is not set in .env, so database tests are skipped.")
-    if to_psycopg_url(url) == to_psycopg_url(config.DATABASE_URL):
+    if to_psycopg_url(url) == to_psycopg_url(REAL_DATABASE_URL):
         pytest.fail("TEST_DATABASE_URL must be a different database from DATABASE_URL.")
     try:
         ensure_database_exists(url)

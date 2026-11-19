@@ -5,6 +5,8 @@
     GET /api/market/history?symbol=RELIANCE.NS&period=1y&fast=20&slow=50&ma200=true&bollinger=true
                                                   prices, averages, RSI, Bollinger, crossovers and the chart
     GET /api/market/history/download?...&format=csv    the same rows as a CSV or Excel file
+    GET /api/market/status                        Open / Pre-open / Closed / Holiday, IST time, next open
+    GET /api/market/symbols?q=relia               type-ahead: stocks, ETFs and indices (at most 20)
 
 The maths lives in marketlens/overview.py, shared with the Streamlit page. Fetching the Nifty 50 snapshot
 takes about 8 seconds, so it runs as a background job: /snapshot answers at once with the last snapshot
@@ -20,7 +22,7 @@ from fastapi.responses import Response
 
 from marketlens.api.errors import ApiError
 from marketlens.api.jobs import get_job, start_job
-from marketlens.api.schemas import df_to_records, fig_to_json
+from marketlens.api.schemas import MarketStatus, SymbolSearch, df_to_records, fig_to_json
 from marketlens.data import download_history
 from marketlens.export import to_csv_bytes, to_excel_bytes
 from marketlens.logger import get_logger
@@ -46,6 +48,26 @@ HISTORY_SECONDS = 60
 CACHE = TtlCache()
 _refresh = {"job_id": None}     # the snapshot job running now (one at a time for everybody)
 _refresh_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------- market clock and symbol search
+
+# Is the market open now? (09:00-09:15 pre-open, 09:15-15:30 open; NSE holidays from data/nse_holidays.csv)
+@router.get("/status", response_model=MarketStatus)
+def status():
+    """Open, Pre-open, Closed or Holiday, the current IST time and the next opening time. When the holiday list
+    has run out, "warning" says so and where NSE publishes the next one."""
+    from marketlens.market_clock import market_clock
+    return MarketStatus(**market_clock())
+
+
+# Type-ahead for every symbol box.
+@router.get("/symbols", response_model=SymbolSearch)
+def symbols(q: str = Query(..., min_length=1, max_length=40, description="part of a symbol or name, e.g. relia"),
+            limit: int = Query(20, ge=1, le=20, description="at most this many answers (20 at most)")):
+    """Nifty 50 / Nifty 200 stocks, ETFs and the indices the app uses; best matches first."""
+    from marketlens.symbols import search_symbols
+    return SymbolSearch(query=q, matches=search_symbols(q, limit))
 
 
 # ---------------------------------------------------------------- price chart

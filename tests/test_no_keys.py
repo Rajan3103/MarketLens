@@ -5,6 +5,7 @@ message, but never crash; API routes may answer 4xx with a readable message, but
 Runs on TEST_DATABASE_URL (skipped without it); yfinance is replaced by made-up prices, so there is no internet.
 """
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yfinance
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 from streamlit.testing.v1 import AppTest
 
 from marketlens import config
+from marketlens.api import jobs as api_jobs
 from marketlens.api import main as api_main
 from tests.test_api import fake_prices
 
@@ -29,7 +31,20 @@ def no_keys(db_url, db_session, monkeypatch):
         monkeypatch.setattr(config, name, value)
     monkeypatch.setattr(config, "DATABASE_URL", db_url)
     monkeypatch.setattr(yfinance, "download", lambda tickers, **kw: fake_prices())
+    # background jobs run at once in this thread, so none is still writing after the test has ended
+    monkeypatch.setattr(api_jobs, "threading", SimpleNamespace(Thread=RunNow))
     return db_url
+
+
+class RunNow:
+    """Stands in for threading.Thread: start() runs the work right away (tests only)."""
+
+    def __init__(self, target, args=(), **kwargs):
+        self.target, self.args = target, args
+
+    # Run the work now, in this thread.
+    def start(self):
+        self.target(*self.args)
 
 
 # Every Streamlit page opens without an error.
@@ -41,7 +56,8 @@ def test_streamlit_page_without_keys(no_keys, page):
 
 # Every GET route answers without a server error (4xx with a message is fine, e.g. 'not found').
 GET_ROUTES = [
-    "/api/health", "/health", "/api/settings/status",
+    "/api/health", "/health", "/api/settings/status", "/api/settings/other", "/api/settings/backups",
+    "/api/scheduler/jobs", "/api/home", "/api/market/status", "/api/market/symbols?q=nifty",
     "/api/market/history?symbol=RELIANCE.NS", "/api/market/history/download?symbol=RELIANCE.NS",
     "/api/market/snapshot", "/api/market/sectors",
     "/api/jobs/no-such-job",
@@ -64,6 +80,8 @@ def test_get_route_without_keys(no_keys, path):
 
 # POST routes that are safe to call: they refuse politely or work in paper / DEMO mode.
 POST_ROUTES = [
+    ("/api/settings/db-check", None),
+    ("/api/scheduler/jobs/login_check/run", None),                           # no Dhan keys: says so
     ("/api/momentum/data-check", {"settings": {"universe": "nifty50"}}),
     ("/api/live/login/check", None),
     ("/api/live/kill", {}),                                                  # refused: no confirm word

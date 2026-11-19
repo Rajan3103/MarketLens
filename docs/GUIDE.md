@@ -554,7 +554,16 @@ Open **http://127.0.0.1:8000/docs**: every endpoint is listed there with a *Try 
 | Endpoint | Answer |
 | --- | --- |
 | `GET /api/health` | `{status, version, database: ok/fail, mode: PAPER/LIVE, demo: true/false}` |
-| `GET /api/settings/status` | which keys are set (never their values), trading mode, database |
+| `GET /api/settings/status` | which keys are set (never their values), trading mode, database, the page's warnings |
+| `GET /api/settings/other` | the non-secret settings (database addresses with the password hidden) |
+| `POST /api/settings/db-check` | check the database again |
+| `GET /api/settings/backups` | newest backup in data/backups, how many are kept (8) |
+| `GET /api/scheduler/jobs` | each scheduled job: when, next run (IST), last run, status, result; scheduler running or not; holidays |
+| `POST /api/scheduler/jobs/{name}/run` | run one job now as a **background job** (follow `/api/jobs/{job_id}`) |
+| `GET /api/home` | the Home page's text and the 12 modules |
+| `GET /api/market/status` | Open / Pre-open (09:00-09:15) / Closed / Holiday, IST time, next opening; warns when `data/nse_holidays.csv` has run out |
+| `GET /api/market/symbols?q=relia` | type-ahead over Nifty 50 / 200, ETFs and indices: symbol, name, kind (at most 20) |
+| `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | the web app's login cookie (only when `DASHBOARD_PASSWORD` is set) |
 | `GET /api/market/snapshot` | index cards, Nifty 50 top 5 gainers / losers and breadth. Fetching takes about 8 s, so it runs as a **background job**: you get the last snapshot at once plus a `job_id` to follow (kept 55 s) |
 | `GET /api/market/sectors?window=1 week` | sector heatmap (1 day / 1 week / 1 month): table and treemap (kept 5 minutes) |
 | `GET /api/market/history?symbol=RELIANCE.NS&period=1y&fast=20&slow=50&ma200=true&bollinger=true` | daily OHLC, volume, both averages, MA200, RSI 14, Bollinger Bands, crossover signals and the 3-panel chart (Plotly JSON); prices kept 60 s |

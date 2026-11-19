@@ -301,6 +301,15 @@ CREATE TABLE orders (
 ```http
 GET    /api/health                          --> status, version, database, PAPER / LIVE, DEMO
 GET    /api/settings/status                 --> which keys are set (never their values)
+GET    /api/settings/other                  --> non-secret settings (database password hidden)
+POST   /api/settings/db-check               --> check the database again
+GET    /api/settings/backups                --> last backup, how many kept
+GET    /api/scheduler/jobs                  --> each job: when, next run (IST), last run, status, result
+POST   /api/scheduler/jobs/{name}/run       --> run one job now (background job)
+GET    /api/home                            --> Home text and the 12 modules
+GET    /api/market/status                   --> Open / Pre-open / Closed / Holiday, next open (IST)
+GET    /api/market/symbols?q=relia          --> type-ahead: stocks, ETFs, indices (max 20)
+POST   /api/auth/login | /logout, GET /me   --> web login cookie (when DASHBOARD_PASSWORD is set)
 GET    /api/market/snapshot                 --> index cards, movers, breadth (background job)
 GET    /api/market/sectors?window=1 week    --> sector heatmap
 GET    /api/market/history?symbol=TCS.NS    --> candles, averages, RSI, Bollinger, crossovers, chart
