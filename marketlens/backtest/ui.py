@@ -9,43 +9,32 @@ import streamlit as st
 
 from marketlens.backtest import charts
 from marketlens.backtest.engine import BacktestResult
+from marketlens.backtest.present import metric_list
 from marketlens.backtest.report import export_excel, export_trades_csv, file_stem
 from marketlens.ui import historical_note
 
 
-# Rupees with commas, or "-" when missing.
-def _rs(value) -> str:
-    return "-" if value is None else f"Rs {value:,.0f}"
+# One card's value as text: "Rs 1,234", "12.34%", "1.25", "7", or "-" when missing.
+def card_text(value, unit: str) -> str:
+    if value is None:
+        return "-"
+    if unit == "Rs":
+        return f"Rs {value:,.0f}"
+    if unit == "%":
+        return f"{value:,.2f}%"
+    if unit == "ratio":
+        return f"{value:,.2f}"
+    return f"{value:,.0f}"
 
 
-# A plain number with 2 decimals (and an optional sign), or "-".
-def _num(value, suffix: str = "") -> str:
-    return "-" if value is None else f"{value:,.2f}{suffix}"
-
-
-# The metric cards: three rows of five.
+# The metric cards in rows of five. The list (labels, units, help) comes from present.metric_list, the same
+# one the web API sends, so both screens show the same numbers.
 def metric_cards(result: BacktestResult):
-    m = result.metrics
-    row = st.columns(5)
-    row[0].metric("Total P&L", _rs(m["total_pnl"]), _num(m["return_pct"], "% of capital"))
-    row[1].metric("CAGR", _num(m["cagr_pct"], "%"), help="Yearly growth rate if returns compound")
-    row[2].metric("Max drawdown", _rs(m["max_drawdown_rs"]), _num(m["max_drawdown_pct"], "%"),
-                  delta_color="off", help="The biggest fall from a high point of the account")
-    row[3].metric("Win rate", _num(m["win_rate_pct"], "%"), f"{m['trades']} trades", delta_color="off")
-    row[4].metric("Profit factor", _num(m["profit_factor"]), help="Money won / money lost; above 1 is profitable")
-    row = st.columns(5)
-    row[0].metric("Sharpe", _num(m["sharpe"]), help="Return per unit of risk (yearly). Above 1 is good")
-    row[1].metric("Sortino", _num(m["sortino"]), help="Like Sharpe, but only losing days count as risk")
-    row[2].metric("Calmar", _num(m["calmar"]), help="CAGR divided by the max drawdown")
-    row[3].metric("Expectancy", _rs(m["expectancy"]), help="Average P&L per trade after costs")
-    row[4].metric("Avg win / avg loss", f"{_rs(m['avg_win'])} / {_rs(m['avg_loss'])}")
-    row = st.columns(5)
-    row[0].metric("Max winning streak", m["max_win_streak"])
-    row[1].metric("Max losing streak", m["max_loss_streak"])
-    row[2].metric("Best day", _rs(m["best_day"]))
-    row[3].metric("Worst day", _rs(m["worst_day"]))
-    row[4].metric("Total costs", _rs(sum(t.costs for t in result.trades)),
-                  help="Brokerage, taxes and slippage (already taken out of the P&L)")
+    cards = metric_list(result)
+    for first in range(0, len(cards), 5):
+        row = st.columns(5)
+        for column, card in zip(row, cards[first:first + 5]):
+            column.metric(card["label"], card_text(card["value"], card["unit"]), help=card["help"])
 
 
 # Everything about one backtest: cards, charts, trade list, downloads and the learning note.

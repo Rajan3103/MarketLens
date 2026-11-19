@@ -4,8 +4,9 @@ NSE tickers on Yahoo Finance end in ".NS", for example RELIANCE.NS.
 Indices start with "^", for example ^NSEI (Nifty 50).
 """
 import pandas as pd
-import streamlit as st
 import yfinance as yf
+
+from marketlens.utils import TtlCache
 
 # Friendly names for the main indices
 INDICES = {
@@ -32,13 +33,27 @@ def download_history(ticker: str, period: str = "1y", interval: str = "1d") -> p
     return df.dropna()
 
 
-# The same download for the Streamlit pages, kept for 60 seconds so pages load fast.
-get_history = st.cache_data(ttl=60)(download_history)
+# Remembered downloads (no Streamlit needed, so the API can import this file too). Tests clear it.
+CACHE = TtlCache()
+SHORT_SECONDS = 60          # recent prices: kept for a minute
+LONG_SECONDS = 3600         # a fixed date range: kept for an hour
 
 
-@st.cache_data(ttl=3600)
+# The same download, kept for 60 seconds so pages load fast. Each caller gets its own copy of the table.
+def get_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    key = ("history", ticker, period, interval)
+    return CACHE.get(key, SHORT_SECONDS, lambda: download_history(ticker, period, interval)).copy()
+
+
+# Daily prices between two dates, kept for an hour.
 def get_history_range(ticker: str, start, end) -> pd.DataFrame:
     """Download daily prices between two dates."""
+    key = ("range", ticker, str(start), str(end))
+    return CACHE.get(key, LONG_SECONDS, lambda: _download_range(ticker, start, end)).copy()
+
+
+# The real download behind get_history_range.
+def _download_range(ticker: str, start, end) -> pd.DataFrame:
     df = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)

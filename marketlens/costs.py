@@ -114,6 +114,67 @@ class CostSettings:
             raise ValueError("Costs and slippage cannot be negative")
 
 
+# The "Trading costs" boxes every backtester, simulator and paper page shows (Streamlit and the web app).
+# name = the key in the dict cost_settings_from_dict() reads; kind = number, yes/no or a choice.
+COST_FIELDS = [
+    {"name": "brokerage_per_order", "label": "Brokerage per order", "unit": "Rs", "kind": "number",
+     "default": BROKERAGE_PER_ORDER_RS, "min": 0.0, "step": 1.0, "help": "F&O and intraday orders"},
+    {"name": "brokerage_cap", "label": f"Cap at {BROKERAGE_CAP_PCT}% (whichever lower)", "unit": "", "kind": "bool",
+     "default": True, "help": "Intraday and futures only"},
+    {"name": "delivery_brokerage", "label": "Delivery brokerage", "unit": "Rs", "kind": "number",
+     "default": DELIVERY_BROKERAGE_RS, "min": 0.0, "step": 1.0, "help": "Shares and ETFs held in demat"},
+    {"name": "slippage_type", "label": "Slippage in", "unit": "", "kind": "choice", "default": "pct",
+     "choices": {"pct": "% of price", "points": "Rs points"}, "help": "How the slippage below is measured"},
+    {"name": "slippage_value", "label": "Slippage", "unit": "% of price or Rs per unit", "kind": "number",
+     "default": 0.0, "min": 0.0, "step": 0.01, "help": "A worse fill price on every order"},
+    {"name": "include_taxes", "label": "Include taxes (STT, exchange, SEBI, stamp, GST)", "unit": "",
+     "kind": "bool", "default": True, "help": "Off = only brokerage and slippage"},
+]
+COST_DEFAULTS = {f["name"]: f["default"] for f in COST_FIELDS}
+
+
+# Read a yes/no value sent as true/false, 1/0, "yes"/"no" (the web app sends JSON booleans).
+def _yes_no(name: str, value) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes", "on"):
+        return True
+    if text in ("false", "0", "no", "off"):
+        return False
+    raise ValueError(f"{name} must be true or false")
+
+
+# Build CostSettings from the boxes' values (missing ones take the default); a bad value raises ValueError.
+def cost_settings_from_dict(values: dict | None = None) -> "CostSettings":
+    """values: {"brokerage_per_order": 20, "brokerage_cap": True, "slippage_type": "pct", ...}"""
+    values = dict(values or {})
+    unknown = sorted(set(values) - set(COST_DEFAULTS))
+    if unknown:
+        raise ValueError(f"Unknown cost setting: {', '.join(unknown)}")
+    picked = {}
+    for f in COST_FIELDS:
+        name, value = f["name"], values.get(f["name"], f["default"])
+        if value is None:
+            value = f["default"]
+        if f["kind"] == "number":
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{f['label']} must be a number") from None
+            if value != value or value < f["min"]:                          # NaN or below the minimum
+                raise ValueError(f"{f['label']} cannot be below {f['min']:g}")
+        elif f["kind"] == "bool":
+            value = _yes_no(f["label"], value)
+        elif value not in f["choices"]:
+            raise ValueError(f"{f['label']} must be one of: {', '.join(f['choices'])}")
+        picked[name] = value
+    return CostSettings(brokerage_per_order=picked["brokerage_per_order"],
+                        brokerage_cap_pct=BROKERAGE_CAP_PCT if picked["brokerage_cap"] else None,
+                        delivery_brokerage=picked["delivery_brokerage"], slippage_type=picked["slippage_type"],
+                        slippage_value=picked["slippage_value"], include_taxes=picked["include_taxes"])
+
+
 @dataclass
 class TradeCosts:
     """Every cost of one order, in rupees (rounded to paise)."""

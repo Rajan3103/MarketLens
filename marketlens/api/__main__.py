@@ -23,6 +23,10 @@ def main(argv: list[str] | None = None):
                         help="restart when a .py file changes (default on your PC)")
     parser.add_argument("--no-reload", dest="reload", action="store_false", help="never restart by itself")
     args = parser.parse_args(argv)
+    from marketlens.auth import startup_problem
+    problem = startup_problem()
+    if problem:                                        # e.g. a password without a long SESSION_SECRET
+        raise SystemExit(f"MarketLens API not started: {problem}")
     print(f"MarketLens API on http://127.0.0.1:{args.port}  (docs: /docs, health: /api/health, "
           f"auto-reload {'on' if args.reload else 'off'}, stop: Ctrl+C)")
     uvicorn.run("marketlens.api.main:app", host="127.0.0.1", port=args.port, reload=args.reload,

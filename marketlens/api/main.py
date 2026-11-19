@@ -6,6 +6,10 @@
 create_app() includes every router found in marketlens/api/routes/ (each file there that has a
 `router` is added automatically), so a new group of endpoints is just a new file in that folder.
 
+Login: when DASHBOARD_PASSWORD is set, every /api address except /api/health and /api/auth/* needs the login
+cookie from POST /api/auth/login and answers 401 without it. /webhook keeps its own WEBHOOK_SECRET check. With a
+password but no SESSION_SECRET of 32+ characters the API refuses to start (see auth.startup_problem).
+
 Errors: a mistake in what was asked (a bad symbol, a missing field) answers 400, anything else 500,
 always as {"error": "<plain-English message>"}. The full Python error goes to logs/marketlens.log and
 error_log, never to the browser.
@@ -21,7 +25,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 import marketlens
-from marketlens import config
+from marketlens import auth, config
 from marketlens.api import routes
 from marketlens.api.errors import ApiError
 from marketlens.api.schemas import Health
@@ -40,6 +44,24 @@ def find_routers() -> list:
     return found
 
 
+OPEN_PATHS = ("/api/health",)          # open even with a password, so a monitor can check the server
+OPEN_PREFIXES = ("/api/auth/",)         # the login itself
+
+
+# True when this address needs the login cookie (only /api addresses, and not the open ones above).
+def needs_login(path: str) -> bool:
+    if not (path == "/api" or path.startswith("/api/")):
+        return False                    # /webhook, /health, /docs: not part of the dashboard login
+    return path not in OPEN_PATHS and not path.startswith(OPEN_PREFIXES)
+
+
+# Stop with a clear message when the login settings are unsafe (password set, session secret too short).
+def check_startup():
+    problem = auth.startup_problem()
+    if problem:
+        raise RuntimeError(problem)
+
+
 # "symbol: Field required; period: ..." from FastAPI's list of input problems.
 def _input_problems(err: RequestValidationError) -> str:
     parts = []
@@ -55,7 +77,8 @@ def create_app(url: str | None = None, clock=time.monotonic, notify=None, execut
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        """When the server starts: jobs left running by the last server are marked failed."""
+        """When the server starts: check the login settings, then mark jobs left running by the last server failed."""
+        check_startup()
         try:
             from marketlens.api.jobs import fail_orphans
             fail_orphans(url)
@@ -80,6 +103,15 @@ def create_app(url: str | None = None, clock=time.monotonic, notify=None, execut
             log.exception("API error on %s %s", request.method, request.url.path)
             return JSONResponse({"error": "Something went wrong on the server. The details are in "
                                           "logs/marketlens.log."}, status_code=500)
+
+    @app.middleware("http")
+    async def require_login(request: Request, call_next):
+        """With DASHBOARD_PASSWORD set, /api addresses need a valid login cookie (else 401)."""
+        from marketlens.api.routes.auth import logged_in
+        if auth.password_required() and needs_login(request.url.path) and not logged_in(request):
+            return JSONResponse({"error": "Please log in first (the password is DASHBOARD_PASSWORD in .env)."},
+                                status_code=401)
+        return await call_next(request)
 
     @app.exception_handler(ApiError)
     async def api_error(request: Request, err: ApiError):

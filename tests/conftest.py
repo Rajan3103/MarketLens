@@ -30,6 +30,16 @@ def no_internet_prices(monkeypatch):
     monkeypatch.setattr(yfinance, "download", blocked)
 
 
+# Every test starts with empty price caches and no remembered wrong passwords or logouts.
+@pytest.fixture(autouse=True)
+def fresh_caches():
+    from marketlens import auth, data
+    data.CACHE.clear()
+    auth.LIMITER.clear()
+    auth._logged_out.clear()
+    yield
+
+
 # Tests never reach Telegram: the keys are blanked (messages are "skipped") and a real POST fails at once.
 # Tests that need a "sent" message set the keys and replace telegram._post themselves.
 @pytest.fixture(autouse=True)

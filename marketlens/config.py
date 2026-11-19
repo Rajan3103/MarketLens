@@ -99,6 +99,10 @@ WEBHOOK_SECRET_MIN_LENGTH = 24                       # shorter secrets are easy 
 
 # ---- App ----
 DASHBOARD_PASSWORD = get_str("DASHBOARD_PASSWORD")
+# Signs the web app's login cookie (any long random text; needed when DASHBOARD_PASSWORD is set)
+SESSION_SECRET = get_str("SESSION_SECRET")
+SESSION_SECRET_MIN_LENGTH = 32                       # shorter secrets are easy to guess
+SESSION_HOURS = 12                                   # a web login lasts this long
 # PostgreSQL only. The password goes in .env, never in the code, so the default has none.
 DATABASE_URL = get_str("DATABASE_URL", "postgresql+psycopg://marketlens@localhost:5432/marketlens")
 # A separate, empty database used only by the tests (empty = database tests are skipped)
@@ -141,6 +145,7 @@ KEYS = [
     ("TELEGRAM_CHAT_ID", "Telegram: which chat receives the alerts"),
     ("WEBHOOK_SECRET", "TradingView / Chartink alerts (module 7); alerts without it are rejected"),
     ("DASHBOARD_PASSWORD", "Password lock for the dashboard on a server"),
+    ("SESSION_SECRET", "Signs the web app's login cookie (needed together with DASHBOARD_PASSWORD)"),
     ("TEST_DATABASE_URL", "Database tests (pytest) on a separate test database"),
 ]
 
@@ -178,3 +183,10 @@ def webhook_secret_strong(secret: str | None = None) -> bool:
     """At least WEBHOOK_SECRET_MIN_LENGTH characters (empty = not strong)."""
     secret = WEBHOOK_SECRET if secret is None else secret
     return len(secret.strip()) >= WEBHOOK_SECRET_MIN_LENGTH
+
+
+# True when the session secret is long enough to sign login cookies safely.
+def session_secret_strong(secret: str | None = None) -> bool:
+    """At least SESSION_SECRET_MIN_LENGTH characters (empty = not strong)."""
+    secret = SESSION_SECRET if secret is None else secret
+    return len(secret.strip()) >= SESSION_SECRET_MIN_LENGTH

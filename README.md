@@ -128,7 +128,7 @@ $ python -m marketlens.scheduler --list && python -m pytest -q
 [GUARD-05] 🛑 Kill switch at MAX_DAILY_LOSS_RS (optional automatic square-off) · manual kill / square off
            need a tick box AND a second click
 [GUARD-06] 🚦 Live deploy only with a saved backtest + 10 forward-test days
-[GUARD-07] 🔒 DASHBOARD_PASSWORD for the Streamlit app (hmac.compare_digest, logout, retry pause)
+[GUARD-07] 🔒 DASHBOARD_PASSWORD for Streamlit and the API (signed httpOnly cookie, 5 tries/min per IP)
 [GUARD-08] 🧪 No look-ahead in every backtest (tested) · costs, slippage and Indian tax included
 [GUARD-09] 🏷 DEMO data is always labelled, and never mixed with real prices
 ```
@@ -237,7 +237,8 @@ DHAN_ACCESS_TOKEN=
 TELEGRAM_BOT_TOKEN=           # @BotFather (see docs/GUIDE.md step 16)
 TELEGRAM_CHAT_ID=
 WEBHOOK_SECRET=               # TradingView / Chartink alerts (24+ characters)
-DASHBOARD_PASSWORD=           # password box before the Streamlit menu
+DASHBOARD_PASSWORD=           # password box before the Streamlit menu and the web app
+SESSION_SECRET=               # 32+ random characters; signs the login cookie
 API_PORT=8000
 FRONTEND_URL=http://localhost:3000
 PG_DUMP_PATH=                 # only if pg_dump is not found by itself

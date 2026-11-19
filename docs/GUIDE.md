@@ -250,7 +250,8 @@ and is never uploaded. Restart the app after changing it.
 | `WEBHOOK_SECRET` | Checks TradingView / Chartink alerts sent to the webhook receiver (module 7) | The receiver refuses every alert |
 | `API_PORT` | Port of the backend API, which also receives the webhook alerts (default 8000; the old name `WEBHOOK_PORT` still works) | 8000 |
 | `FRONTEND_URL` | Address of the web app; Streamlit pages link to it (page 8 opens library strategies there) | http://localhost:3000 |
-| `DASHBOARD_PASSWORD` | A password box before the Streamlit app's menu (checked with `hmac.compare_digest`; Logout in the sidebar; 5 wrong tries = 30 s pause). Set it before running on a server | No password; Settings & Status warns |
+| `DASHBOARD_PASSWORD` | A password box before the Streamlit app's menu, and the web app's login (`/api/auth/login`). Checked with `hmac.compare_digest`; Logout in the sidebar; at most 5 wrong tries per minute per IP. Set it before running on a server | No password; Settings & Status warns |
+| `SESSION_SECRET` | Signs the web app's login cookie (12 hours, httpOnly). At least 32 random characters: `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Needed when `DASHBOARD_PASSWORD` is set | With a password, the API refuses to start |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Webhook alerts (module 7), the 08:45 login reminder, order and kill-switch messages, Confirm / Reject buttons for live orders; the bot later (module 12) | No messages are sent (they are still saved in `notifications`); confirm live orders on the command line |
 
 **Settings & Status** shows which keys are still missing.
