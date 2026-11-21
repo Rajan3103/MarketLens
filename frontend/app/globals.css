@@ -1,26 +1,208 @@
-@import "tailwindcss";
+/*
+  MarketLens design system: every colour, font and corner radius lives here as a CSS variable.
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  - :root holds the LIGHT theme, .dark the DARK theme (the default). next-themes puts class="dark" on <html>.
+  - @theme inline turns each variable into Tailwind classes: --color-profit -> text-profit, bg-profit/10,
+    border-profit ... so pages never use one-off colours like text-green-600.
+  - Every text colour has at least 4.5:1 contrast on background, card and muted, and on its own 10 % tint
+    (bg-profit/10 behind text-profit). Check again after a change: node scripts/check-contrast.mjs
+  - Trading colours: profit (green), loss (red), warning (amber), live (red), paper (blue), demo (amber).
+    Each has a -foreground colour for text on a solid fill (bg-live text-live-foreground).
+*/
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* dark: classes follow the theme toggle (class="dark" on <html>), not the computer's setting */
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* fonts from next/font in app/layout.jsx: Inter for text, JetBrains Mono for numbers and code */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-heading: var(--font-sans);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* trading colours */
+  --color-profit: var(--profit);
+  --color-profit-foreground: var(--profit-foreground);
+  --color-loss: var(--loss);
+  --color-loss-foreground: var(--loss-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-live: var(--live);
+  --color-live-foreground: var(--live-foreground);
+  --color-paper: var(--paper);
+  --color-paper-foreground: var(--paper-foreground);
+  --color-demo: var(--demo);
+  --color-demo-foreground: var(--demo-foreground);
+
+  /* chart series, readable on the page and on cards */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ---------------------------------------------------------------- light theme */
+:root {
+  --radius: 0.625rem;
+
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #52607a;
+  --accent: #e8eef8;
+  --accent-foreground: #0f172a;
+  --destructive: #b91c1c;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #1d4ed8;
+
+  --profit: #13692f;
+  --profit-foreground: #ffffff;
+  --loss: #b91c1c;
+  --loss-foreground: #ffffff;
+  --warning: #954508;
+  --warning-foreground: #ffffff;
+  --live: #b42318;
+  --live-foreground: #ffffff;
+  --paper: #1d4ed8;
+  --paper-foreground: #ffffff;
+  --demo: #8a4b06;
+  --demo-foreground: #ffffff;
+
+  --chart-1: #2563eb;
+  --chart-2: #c2410c;
+  --chart-3: #0f766e;
+  --chart-4: #7c3aed;
+  --chart-5: #be185d;
+
+  --sidebar: #f8fafc;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #1d4ed8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e8eef8;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #1d4ed8;
+}
+
+/* ---------------------------------------------------------------- dark theme (the default) */
+.dark {
+  --background: #0b0f17;
+  --foreground: #e6e9ef;
+  --card: #121826;
+  --card-foreground: #e6e9ef;
+  --popover: #121826;
+  --popover-foreground: #e6e9ef;
+  --primary: #60a5fa;
+  --primary-foreground: #0b0f17;
+  --secondary: #1c2333;
+  --secondary-foreground: #e6e9ef;
+  --muted: #1c2333;
+  --muted-foreground: #9ba5b7;
+  --accent: #1e2a40;
+  --accent-foreground: #e6e9ef;
+  --destructive: #f87171;
+  --border: #263042;
+  --input: #2f3a4f;
+  --ring: #60a5fa;
+
+  --profit: #34d399;
+  --profit-foreground: #0b0f17;
+  --loss: #f87171;
+  --loss-foreground: #0b0f17;
+  --warning: #fbbf24;
+  --warning-foreground: #0b0f17;
+  --live: #ff7a7a;
+  --live-foreground: #0b0f17;
+  --paper: #60a5fa;
+  --paper-foreground: #0b0f17;
+  --demo: #fbbf24;
+  --demo-foreground: #0b0f17;
+
+  --chart-1: #3b82f6;
+  --chart-2: #f97316;
+  --chart-3: #14b8a6;
+  --chart-4: #a78bfa;
+  --chart-5: #ec4899;
+
+  --sidebar: #0e131d;
+  --sidebar-foreground: #e6e9ef;
+  --sidebar-primary: #60a5fa;
+  --sidebar-primary-foreground: #0b0f17;
+  --sidebar-accent: #1e2a40;
+  --sidebar-accent-foreground: #e6e9ef;
+  --sidebar-border: #263042;
+  --sidebar-ring: #60a5fa;
+}
+
+/* Numbers that must line up in columns: <span className="num">1,23,456.50</span> */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  /* every table and code block lines its digits up */
+  table, code, kbd, pre, [data-slot="table-cell"] {
+    font-variant-numeric: tabular-nums;
+  }
+  code, kbd, pre {
+    @apply font-mono;
+  }
 }

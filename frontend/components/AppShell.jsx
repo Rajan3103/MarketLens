@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import ThemeToggle from "@/components/ThemeToggle";
 import { apiGet } from "@/lib/api";
 import { GROUPS, START_PAGES } from "@/lib/modules";
 
@@ -115,7 +116,10 @@ export default function AppShell({ children }) {
             </button>
             <Link href="/" className="font-bold md:hidden">📈 MarketLens</Link>
           </div>
-          <HealthBadges />
+          <div className="flex items-center gap-2">
+            <HealthBadges />
+            <ThemeToggle />
+          </div>
         </header>
         <main className="w-full max-w-6xl flex-1 px-4 py-6 md:px-8">{children}</main>
         <footer className="px-4 pb-6 text-xs text-slate-500 md:px-8">
