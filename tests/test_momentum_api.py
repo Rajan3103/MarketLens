@@ -71,6 +71,9 @@ def test_backtest_job_result(client):
     names = [t["name"] for t in r["equity_chart"]["data"]]
     assert names[0] == "Strategy" and any("Nifty 50" in n for n in names)
     assert r["holdings"][-1]["symbol"] == "Cash" and r["trades"] and r["yearly"][0]["Year"] == 2019
+    # the shared backtest shape (backtest/present.py) is there too, for <BacktestResults>
+    assert r["historical"] is True and r["metrics"][0]["key"] == "total_pnl" and r["equity"][0]["value"] > 0
+    assert r["benchmarks"][0]["name"] == r["benchmark_name"] and r["yearly_returns"] and r["drawdown"]
     assert any("survivorship" in n for n in r["notes"])
     assert job["steps"][-1][0] >= 95 and "Rebalance" in job["steps"][-2][1]
 

@@ -6,6 +6,7 @@
         "equity": [{"time": "2025-01-01", "value": 500000.0}, ...],     # account value (Rs)
         "drawdown": [{"time", "value" (% below the high), "rs"}, ...],
         "benchmark": [{"time", "value"}, ...] or None,                  # same starting capital
+        "benchmarks": [{"name": "NIFTY", "points": [...]}, ...],        # every comparison curve (main one first)
         "yearly_returns": [{"year", "pnl", "return_pct"}, ...],
         "monthly_returns": [{"year", "month", "pnl", "return_pct"}, ...],
         "day_heatmap": <Plotly figure JSON>, "month_heatmap": <Plotly figure JSON>,
@@ -98,6 +99,18 @@ def period_returns(result: BacktestResult, monthly: bool) -> list[dict]:
     return rows
 
 
+# Every comparison curve as [{"name", "points"}]: the main benchmark first, then any others a backtester added
+# in extras["benchmarks"] (name -> value curve on the same capital, e.g. a Nifty 200 Momentum 30 ETF).
+def benchmark_list(result: BacktestResult) -> list[dict]:
+    out = []
+    if result.benchmark is not None:
+        out.append({"name": result.benchmark_name or "Benchmark", "points": series_points(result.benchmark)})
+    for name, series in (result.extras.get("benchmarks") or {}).items():
+        if name != result.benchmark_name and series is not None and len(series):
+            out.append({"name": str(name), "points": series_points(series)})
+    return out
+
+
 # The days a backtester skipped and why (empty when it skipped none).
 def skipped_rows(result: BacktestResult) -> list[dict]:
     skipped = result.extras.get("skipped")
@@ -120,6 +133,7 @@ def result_to_json(result: BacktestResult) -> dict:
         "drawdown": drawdown_points(result),
         "benchmark_name": result.benchmark_name or None,
         "benchmark": series_points(result.benchmark) if result.benchmark is not None else None,
+        "benchmarks": benchmark_list(result),
         "yearly_returns": period_returns(result, monthly=False),
         "monthly_returns": period_returns(result, monthly=True),
         "day_heatmap": fig_to_json(charts.daily_heatmap(result)) if has_trades else None,

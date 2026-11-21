@@ -60,6 +60,20 @@ def test_equity_drawdown_and_benchmark(known):
     assert known["benchmark"] == [{"time": "2025-01-01", "value": 100_000}, {"time": "2026-12-31", "value": 110_000}]
 
 
+# Every comparison curve: the main benchmark first, then extra ones from extras["benchmarks"].
+def test_benchmark_list():
+    trades = [trade("BUY", 100, 200, dt.date(2025, 1, 15))]
+    bench = pd.Series([200.0, 220.0], index=[dt.date(2025, 1, 1), dt.date(2025, 12, 31)])
+    result = BacktestResult.build(trades, 100_000, dt.date(2025, 1, 1), dt.date(2025, 12, 31),
+                                  benchmark=bench, benchmark_name="Nifty 50")
+    result.extras["benchmarks"] = {"Nifty 50": result.benchmark,
+                                   "Momentum ETF": pd.Series([100_000.0, 130_000.0], index=bench.index)}
+    curves = result_to_json(result)["benchmarks"]
+    assert [c["name"] for c in curves] == ["Nifty 50", "Momentum ETF"]          # the main one is not listed twice
+    assert curves[0]["points"][-1] == {"time": "2025-12-31", "value": 110_000}
+    assert curves[1]["points"][-1] == {"time": "2025-12-31", "value": 130_000}
+
+
 # Yearly: 2025 = 0 (win then loss), 2026 = +500 on 1,00,000 = 0.5 %.
 # Monthly: Jan +1 % of 1,00,000; Feb -1,000 of 1,01,000 = -0.99 %; Mar 2026 +0.5 %.
 def test_yearly_and_monthly_returns(known):
@@ -84,7 +98,8 @@ def test_heatmaps_trades_and_skipped(known):
 def test_result_without_trades():
     empty = result_to_json(BacktestResult.build([], 50_000, dt.date(2025, 1, 1), dt.date(2025, 3, 31)))
     assert empty["trades"] == [] and empty["monthly_returns"] == [] and empty["day_heatmap"] is None
-    assert empty["benchmark"] is None and empty["skipped_days"] == [] and empty["historical"] is True
+    assert empty["benchmark"] is None and empty["benchmarks"] == [] and empty["skipped_days"] == []
+    assert empty["historical"] is True
     assert empty["equity"] == [{"time": "2025-01-01", "value": 50_000}]
 
 

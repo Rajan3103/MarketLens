@@ -1,145 +1,160 @@
 "use client";
-// The results of a portfolio backtest (from marketlens/api/results.py): cards, strategy vs Nifty table,
-// value and drawdown charts, yearly returns, final holdings, every rebalance and the trade list.
+// The results of any backtest in the shared shape (result_to_json, marketlens/backtest/present.py), in tabs:
+// Summary (tiles), Equity & drawdown (EquityChart), Calendar (heatmaps), Trades (table) and Yearly. A page can add
+// its own tabs after these (e.g. the momentum engine's holdings and rebalances).
 //
-//   <BacktestResults result={job.result} />
+//   <BacktestResults result={job.result} extraTabs={[{ id: "holdings", label: "Holdings", content: <…/> }]} />
+//
+// The open tab is kept in the address as ?result=… (param), so it never clashes with the page's own ?tab=.
+import { CalendarDays, LayoutGrid, LineChart, ListOrdered, TableProperties } from "lucide-react";
+
 import DataTable from "@/components/DataTable";
 import DemoBanner from "@/components/DemoBanner";
+import EmptyState from "@/components/EmptyState";
+import EquityChart from "@/components/EquityChart";
+import HistoricalNote from "@/components/HistoricalNote";
 import MetricCard from "@/components/MetricCard";
+import MetricGrid from "@/components/MetricGrid";
 import PlotlyChart from "@/components/PlotlyChart";
-import { formatDate, formatInt, formatNumber, formatPct, formatRs, isEmpty } from "@/lib/format";
+import Tabs from "@/components/Tabs";
+import { formatDate, formatInt, formatNumber, formatPct, formatRs, isEmpty, pnlClass } from "@/lib/format";
 
-const HOLDING_COLUMNS = [
-  { key: "symbol", label: "Holding", kind: "text" },
-  { key: "qty", label: "Shares", kind: "int" },
-  { key: "avg_price", label: "Avg buy price", kind: "rs" },
-  { key: "price", label: "Last price", kind: "rs" },
-  { key: "value", label: "Value", kind: "rs", decimals: 0 },
-  { key: "weight_pct", label: "Weight", kind: "pct" },
-  { key: "rank", label: "Rank", kind: "int" },
-];
-const REBALANCE_COLUMNS = [
-  { key: "signal_day", label: "Signal (close)", kind: "date" },
-  { key: "trade_day", label: "Traded (next close)", kind: "date" },
-  { key: "sold", label: "Sold", kind: "text" },
-  { key: "bought", label: "Bought", kind: "text" },
-  { key: "stocks", label: "Stocks held", kind: "int" },
-  { key: "market_ok", label: "Nifty filter", kind: "text", render: (r) => (r.market_ok ? "✓ invested" : "✗ safe asset") },
-  { key: "tax_paid", label: "Tax paid", kind: "rs", decimals: 0 },
-  { key: "value_after", label: "Value after", kind: "rs", decimals: 0 },
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Metrics that are a profit or a loss: shown with a sign and coloured.
+const SIGNED = new Set(["total_pnl", "return_pct", "cagr_pct", "expectancy", "avg_win", "avg_loss", "best_day",
+  "worst_day", "max_drawdown_rs", "max_drawdown_pct"]);
+// The trade list (the columns every backtester writes, see backtest/engine.py TRADE_COLUMNS).
 const TRADE_COLUMNS = [
-  { key: "symbol", label: "Stock", kind: "text" },
-  { key: "qty", label: "Shares", kind: "int" },
-  { key: "entry_time", label: "Bought", kind: "date" },
-  { key: "entry_price", label: "Buy price", kind: "rs" },
-  { key: "exit_time", label: "Sold", kind: "date" },
-  { key: "exit_price", label: "Sell price", kind: "rs" },
-  { key: "exit_reason", label: "Why", kind: "text" },
-  { key: "note", label: "Gain type", kind: "text" },
+  { key: "leg_no", label: "Leg", kind: "int", hidden: true },
+  { key: "symbol", label: "Symbol", kind: "text" },
+  { key: "side", label: "Side", kind: "text" },
+  { key: "qty", label: "Qty", kind: "int" },
+  { key: "entry_time", label: "Entry", kind: "date" },
+  { key: "entry_price", label: "Entry price", kind: "number" },
+  { key: "exit_time", label: "Exit", kind: "date" },
+  { key: "exit_price", label: "Exit price", kind: "number" },
+  { key: "exit_reason", label: "Exit reason", kind: "text" },
+  { key: "note", label: "Note", kind: "text", hidden: true },
+  { key: "gross_pnl", label: "Gross P&L", kind: "rs", colorSign: true },
   { key: "costs", label: "Costs", kind: "rs" },
-  { key: "pnl", label: "P&L after costs", kind: "rs", colorSign: true },
+  { key: "pnl", label: "Net P&L", kind: "rs", colorSign: true },
 ];
+const YEAR_COLUMNS = [
+  { key: "year", label: "Year", kind: "text" },
+  { key: "pnl", label: "P&L", kind: "rs_signed", colorSign: true, decimals: 0 },
+  { key: "return_pct", label: "Return", kind: "pct_signed", colorSign: true },
+];
+const MONTH_COLUMNS = [
+  { key: "year", label: "Year", kind: "text" },
+  { key: "month_name", label: "Month", kind: "text" },
+  { key: "pnl", label: "P&L", kind: "rs_signed", colorSign: true, decimals: 0 },
+  { key: "return_pct", label: "Return", kind: "pct_signed", colorSign: true },
+];
+const SKIPPED_COLUMNS = [{ key: "date", label: "Day", kind: "date" }, { key: "reason", label: "Why it was skipped", kind: "text" }];
 
-// Columns of a table whose first column is text and the rest are numbers (comparison, yearly, tax).
-function columnsOf(rows, first, signed = false) {
-  if (!rows?.length) return [];
-  return Object.keys(rows[0]).map((key) => (key === first
-    ? { key, label: key, kind: "text" }
-    : { key, label: key, kind: "number", colorSign: signed }));
+// One metric as text, by its unit (Rs, %, ratio, trades, days).
+export function metricText(m) {
+  if (isEmpty(m.value)) return "–";
+  const signed = SIGNED.has(m.key);
+  if (m.unit === "Rs") return formatRs(m.value, 0, signed);
+  if (m.unit === "%") return formatPct(m.value, 2, signed);
+  if (m.unit === "ratio") return formatNumber(m.value, 2);
+  return formatInt(m.value);
 }
 
-// A small heading.
-function Heading({ children }) {
-  return <h3 className="text-base font-semibold">{children}</h3>;
+// Summary: every metric as a tile.
+function Summary({ result }) {
+  return (
+    <div className="space-y-4">
+      <MetricGrid columns={4}>
+        {result.metrics.map((m) => (
+          <MetricCard key={m.key} label={m.label} value={metricText(m)} help={m.help}
+            valueClassName={SIGNED.has(m.key) ? pnlClass(m.value) : ""} />
+        ))}
+      </MetricGrid>
+      {result.skipped_days?.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {formatInt(result.skipped_days.length)} day(s) were skipped; the Trades tab lists them with the reason.
+        </p>
+      )}
+    </div>
+  );
 }
 
-export default function BacktestResults({ result }) {
-  if (!result) return null;
-  const s = result.summary;
-  const beat = isEmpty(s.benchmark_return_pct) ? null : s.total_return_pct - s.benchmark_return_pct;
+// Equity & drawdown: the strategy and every benchmark on one chart, the drawdown underneath.
+function Equity({ result }) {
+  const curves = [{ name: "Strategy", points: result.equity }, ...(result.benchmarks || [])];
+  return <EquityChart curves={curves} drawdown={result.drawdown} />;
+}
+
+// Calendar: the day-by-day and month-by-month heatmaps.
+function Calendar({ result }) {
+  if (!result.day_heatmap && !result.month_heatmap) {
+    return <EmptyState icon={CalendarDays} title="No trades, so no calendar" />;
+  }
+  return (
+    <div className="space-y-4">
+      <PlotlyChart figure={result.day_heatmap} />
+      <PlotlyChart figure={result.month_heatmap} />
+    </div>
+  );
+}
+
+// Trades: every trade, then the skipped days.
+function Trades({ result }) {
+  const shown = result.trades?.length || 0;
   return (
     <div className="space-y-6">
-      <DemoBanner demo={result.is_demo} />
+      {result.trades_total > shown && (
+        <p className="text-sm text-muted-foreground">
+          The newest {formatInt(shown)} of {formatInt(result.trades_total)} trades are shown; the Excel report has all.
+        </p>
+      )}
+      <DataTable columns={TRADE_COLUMNS} rows={result.trades} downloadName="trades" emptyText="No trades in this period."
+        rowKey={(r, i) => `${r.symbol}-${r.entry_time}-${r.exit_time}-${i}`} />
+      {result.skipped_days?.length > 0 && (
+        <DataTable title="Skipped days" columns={SKIPPED_COLUMNS} rows={result.skipped_days} downloadName="skipped-days"
+          rowKey={(r, i) => `${r.date}-${i}`} />
+      )}
+    </div>
+  );
+}
+
+// Yearly: P&L and return per year, then per month.
+function Yearly({ result }) {
+  const months = (result.monthly_returns || []).map((m) => ({ ...m, month_name: MONTHS[m.month - 1] }));
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <DataTable title="Year by year" columns={YEAR_COLUMNS} rows={result.yearly_returns} searchable={false}
+        downloadName="yearly-returns" rowKey={(r) => r.year} emptyText="No yearly returns yet." />
+      <DataTable title="Month by month" columns={MONTH_COLUMNS} rows={months} downloadName="monthly-returns"
+        rowKey={(r) => `${r.year}-${r.month}`} emptyText="No monthly returns yet." />
+    </div>
+  );
+}
+
+export default function BacktestResults({ result, extraTabs = [], param = "result" }) {
+  if (!result) return null;
+  const tabs = [
+    { id: "summary", label: "Summary", icon: LayoutGrid, content: <Summary result={result} /> },
+    { id: "equity", label: "Equity & drawdown", icon: LineChart, content: <Equity result={result} /> },
+    { id: "calendar", label: "Calendar", icon: CalendarDays, content: <Calendar result={result} /> },
+    { id: "trades", label: "Trades", icon: ListOrdered, content: <Trades result={result} /> },
+    { id: "yearly", label: "Yearly", icon: TableProperties, content: <Yearly result={result} /> },
+    ...extraTabs,
+  ];
+  return (
+    <section className="space-y-4" aria-label="Backtest results">
+      {result.is_demo && <DemoBanner demo />}
       <div>
         <h2 className="text-lg font-semibold">{result.name}</h2>
-        <p className="text-sm text-slate-500">
+        <p className="num text-sm text-muted-foreground">
           {formatDate(result.start)} to {formatDate(result.end)} · starting capital {formatRs(result.capital, 0)}
-          {result.run_id ? ` · saved as run ${result.run_id}` : ""}
+          {result.run_id ? ` · saved as run ${result.run_id}` : ""} · all P&amp;L after costs
         </p>
       </div>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="Final value" value={formatRs(s.final_value, 0)} change={s.total_return_pct} />
-        <MetricCard label="CAGR" value={formatPct(s.cagr_pct)} help="Yearly growth rate over the whole period" />
-        <MetricCard label="Max drawdown" value={formatPct(s.max_drawdown_pct)}
-          help="Biggest fall from a high, in % of that high" />
-        <MetricCard label="Sharpe" value={formatNumber(s.sharpe)} help="Return per unit of risk (daily, yearly)" />
-        <MetricCard label="Nifty 50 final value" value={formatRs(s.benchmark_final, 0)} change={s.benchmark_return_pct} />
-        <MetricCard label="Vs Nifty 50" value={beat === null ? "–" : `${beat > 0 ? "+" : ""}${formatNumber(beat)} points`}
-          change={beat} changeText={beat === null ? null : beat >= 0 ? "ahead" : "behind"}
-          help="Total return of the strategy minus Nifty 50's" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="Charges" value={formatRs(s.charges, 0)} help="Brokerage, STT, exchange, SEBI, stamp, GST, DP" />
-        <MetricCard label="Slippage" value={formatRs(s.slippage, 0)} help="Worse fill prices than the close" />
-        <MetricCard label="Capital gains tax" value={formatRs(s.tax_paid, 0)} />
-        <MetricCard label="Orders" value={formatInt(s.orders)} help={`${s.rebalance_count} rebalances`} />
-        <MetricCard label="If all sold at the end" value={formatRs(s.liquidation?.value, 0)}
-          help="After exit costs and tax" />
-        <MetricCard label="Rebalances in safe asset" value={`${formatInt(s.days_in_cash)} of ${formatInt(s.rebalance_count)}`}
-          help="Nifty 50 was below its average, so nothing was bought" />
-      </div>
-
-      <PlotlyChart figure={result.equity_chart} height={420} />
-      <PlotlyChart figure={result.drawdown_chart} height={280} />
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-2">
-          <Heading>Strategy vs Nifty 50</Heading>
-          <DataTable columns={columnsOf(result.comparison, "Measure")} rows={result.comparison} pageSize={20}
-            rowKey={(r) => r.Measure} />
-        </div>
-        <div className="space-y-2">
-          <Heading>Year by year (%)</Heading>
-          <DataTable columns={columnsOf(result.yearly, "Year", true)} rows={result.yearly} pageSize={20}
-            rowKey={(r) => r.Year} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Heading>Holdings at the end</Heading>
-        <DataTable columns={HOLDING_COLUMNS} rows={result.holdings} pageSize={25} rowKey={(r) => r.symbol} />
-      </div>
-
-      <details className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-        <summary className="cursor-pointer font-semibold">Every rebalance ({result.rebalances.length})</summary>
-        <div className="pt-3">
-          <DataTable columns={REBALANCE_COLUMNS} rows={[...result.rebalances].reverse()} pageSize={15}
-            rowKey={(r) => r.trade_day} />
-        </div>
-      </details>
-      <details className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-        <summary className="cursor-pointer font-semibold">
-          Trades ({result.trades_total}{result.trades_total > result.trades.length ? `, newest ${result.trades.length} shown` : ""})
-        </summary>
-        <div className="pt-3">
-          <DataTable columns={TRADE_COLUMNS} rows={result.trades} pageSize={20}
-            rowKey={(r, i) => `${r.symbol}-${r.entry_time}-${r.exit_time}-${i}`} />
-        </div>
-      </details>
-      {result.tax_by_year?.length > 0 && (
-        <details className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-          <summary className="cursor-pointer font-semibold">Capital gains tax by financial year</summary>
-          <div className="pt-3">
-            <DataTable columns={columnsOf(result.tax_by_year, "Financial year")} rows={result.tax_by_year}
-              rowKey={(r) => r["Financial year"]} />
-          </div>
-        </details>
-      )}
-      <ul className="list-disc space-y-1 pl-5 text-xs text-slate-500">
-        {result.notes.map((n) => <li key={n}>{n}</li>)}
-      </ul>
-    </div>
+      <Tabs tabs={tabs} param={param} />
+      {result.historical !== false && <HistoricalNote />}
+    </section>
   );
 }

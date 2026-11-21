@@ -1,52 +1,74 @@
 "use client";
-// A button for things that cannot be undone: tick the box, click once (the button asks again), click again.
-// The second click must come within 8 seconds, otherwise it goes back to the start.
+// A red button for things that cannot be undone. It opens a confirm dialog; for live actions (kill switch,
+// square off, real orders) the user must also type a word such as STOP before the button works.
 //
-//   <DangerButton tick="Yes, block all new orders today" label="Kill switch ON" onConfirm={() => apiPost(...)} />
-import { useEffect, useState } from "react";
+//   <DangerButton label="Kill switch ON" tick="Every new order is blocked for the rest of the day."
+//     confirmWord="STOP" onConfirm={() => apiPost("live/kill", { confirm: "KILL" })} />
+//
+// tick: what will happen (shown in the dialog). onConfirm may return a promise; the dialog waits for it.
+import { Loader2, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 
-const ARM_SECONDS = 8;
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
-export default function DangerButton({ tick, label, onConfirm, disabled = false }) {
-  const [sure, setSure] = useState(false);
-  const [armed, setArmed] = useState(false);
+export default function DangerButton({ label, tick, title, onConfirm, confirmWord, disabled = false, size }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
+  const wordOk = !confirmWord || typed.trim().toUpperCase() === confirmWord.toUpperCase();
 
-  // Forget the first click after a few seconds.
-  useEffect(() => {
-    if (!armed) return undefined;
-    const timer = setTimeout(() => setArmed(false), ARM_SECONDS * 1000);
-    return () => clearTimeout(timer);
-  }, [armed]);
+  // Open or close the dialog (always starting with an empty word box).
+  const change = (next) => {
+    if (busy) return;
+    setOpen(next);
+    setTyped("");
+  };
 
-  // First click arms the button; the second one does it.
-  const click = async () => {
-    if (!armed) {
-      setArmed(true);
-      return;
-    }
+  // The final "Yes" in the dialog.
+  const confirm = async () => {
     setBusy(true);
     try {
       await onConfirm();
+      setOpen(false);
+      setTyped("");
     } finally {
       setBusy(false);
-      setArmed(false);
-      setSure(false);
     }
   };
 
   return (
-    <div className="space-y-2">
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={sure} disabled={disabled}
-          onChange={(e) => { setSure(e.target.checked); setArmed(false); }} />
-        {tick}
-      </label>
-      <button onClick={click} disabled={!sure || disabled || busy}
-        className={`rounded-md px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 ${armed
-          ? "animate-pulse bg-red-800 ring-2 ring-red-300" : "bg-red-600 hover:bg-red-700"}`}>
-        {busy ? "Working…" : armed ? `Click again to confirm: ${label}` : label}
-      </button>
-    </div>
+    <AlertDialog open={open} onOpenChange={change}>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size={size} disabled={disabled}>
+          <TriangleAlert aria-hidden="true" /> {label}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title || `${label}?`}</AlertDialogTitle>
+          <AlertDialogDescription>{tick || "This cannot be undone."}</AlertDialogDescription>
+        </AlertDialogHeader>
+        {confirmWord && (
+          <div className="space-y-2">
+            <Label htmlFor="danger-word">Type <span className="font-mono font-bold">{confirmWord}</span> to confirm</Label>
+            <Input id="danger-word" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off"
+              autoFocus onKeyDown={(e) => { if (e.key === "Enter" && wordOk && !busy) confirm(); }} />
+          </div>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <Button onClick={confirm} disabled={!wordOk || busy}
+            className="bg-loss text-loss-foreground hover:bg-loss/90">
+            {busy && <Loader2 className="animate-spin" aria-hidden="true" />} {label}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

@@ -4,6 +4,7 @@
     GET  /api/settings/other               the non-secret settings (database addresses with the password hidden)
     POST /api/settings/db-check            check the database again
     GET  /api/settings/backups             newest backup and how many are kept
+    GET  /api/settings/cost-fields         the trading-cost boxes (COST_FIELDS) for every backtest form
     GET  /api/scheduler/jobs               each job: when, next run (IST), last run, status, result; holidays
     POST /api/scheduler/jobs/{name}/run    run one job now as a background job (follow /api/jobs/{job_id})
     GET  /api/home                         the Home page's text and module table
@@ -120,6 +121,15 @@ def run_job_now(name: str, request: Request):
         raise ApiError("Running a job needs the database (every run is saved there). Start PostgreSQL and try "
                        "again.", 503) from None
     return JobStarted(job_id=job_id, job=name, name=sched.BY_ID[name].name)
+
+
+# The "Trading costs" boxes every backtester, simulator and paper page shows (same as Streamlit's).
+@router.get("/api/settings/cost-fields", tags=["settings"])
+def cost_fields() -> dict:
+    """Each box: name, label, unit, kind (number / bool / choice), default, min, step, choices and help. Send the
+    values back as "costs": {...} to any backtest route; costs.cost_settings_from_dict checks them."""
+    from marketlens.costs import COST_FIELDS
+    return {"fields": COST_FIELDS}
 
 
 # The Home page.

@@ -11,6 +11,7 @@ import FormField, { INPUT_CLASS } from "@/components/FormField";
 import ProgressBar from "@/components/ProgressBar";
 import { apiPost } from "@/lib/api";
 
+import portfolioTabs from "./PortfolioTabs";
 import SettingsForm from "./SettingsForm";
 
 const PROBLEM_COLUMNS = [
@@ -162,7 +163,7 @@ export default function BacktestTab({ settings, setSettings, options, state, set
       )}
       {jobId && <ProgressBar key={jobId} jobId={jobId} onDone={backtestDone} />}
       {running && <p className="text-xs text-slate-500">You can switch tabs; the backtest keeps running on the server.</p>}
-      {result && <BacktestResults result={result} />}
+      {result && <BacktestResults result={result} extraTabs={portfolioTabs(result)} />}
       <SaveStrategy settings={settings} defaultName={opened?.name} />
     </div>
   );

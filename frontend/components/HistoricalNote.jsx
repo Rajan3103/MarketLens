@@ -1,6 +1,15 @@
-// The fixed reminder every backtest, simulator and signal page shows.
+// The fixed reminder every backtest, simulator, scanner and signal result shows: a small muted bar.
+import { Info } from "lucide-react";
+
 export const HISTORICAL_NOTE = "Historical analysis for learning, not a live trading recommendation.";
 
-export default function HistoricalNote() {
-  return <p className="mt-6 border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800">📘 {HISTORICAL_NOTE}</p>;
+// <HistoricalNote /> under any result; className adds spacing when needed.
+export default function HistoricalNote({ className = "" }) {
+  return (
+    <p role="note" className={`mt-6 flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs
+      text-muted-foreground ${className}`}>
+      <Info className="size-3.5 shrink-0" aria-hidden="true" />
+      {HISTORICAL_NOTE}
+    </p>
+  );
 }

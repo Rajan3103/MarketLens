@@ -4,64 +4,58 @@
 //   <ProgressBar value={45} label="Daily loss limit used" />
 //   <ProgressBar jobId={id} onDone={(job) => setResult(job.result)} />    // asks /api/jobs/{id} every second
 //
-// With a job: shows the % and message, a Cancel button while it runs, and the result's status at the end.
-import { useEffect, useRef, useState } from "react";
+// With a job: the % and message, a Cancel button while it runs, and how it ended.
+import { X } from "lucide-react";
+import { useState } from "react";
 
 import ErrorBox from "@/components/ErrorBox";
-import { apiGet, apiPost } from "@/lib/api";
-import usePolling from "@/lib/usePolling";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { useJob } from "@/lib/queries";
 
 const STATUS_TEXT = { queued: "Waiting to start", running: "Working", done: "Done", failed: "Failed",
   cancelled: "Cancelled" };
+// The bar's colour for each tone (the text label always says the same thing in words).
+const TONES = {
+  blue: "[&_[data-slot=progress-indicator]]:bg-primary",
+  green: "[&_[data-slot=progress-indicator]]:bg-profit",
+  red: "[&_[data-slot=progress-indicator]]:bg-loss",
+  amber: "[&_[data-slot=progress-indicator]]:bg-warning",
+};
 
-// The bar itself: 0-100 %, blue while working, green when done, red when it failed.
+// The bar itself: 0-100 %, blue while working, green when done, red when it failed, amber for a warning.
 export function Bar({ value = 0, label, tone = "blue" }) {
   const pct = Math.min(Math.max(Number(value) || 0, 0), 100);
-  const colors = { blue: "bg-blue-600", green: "bg-green-600", red: "bg-red-600", amber: "bg-amber-500" };
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       {label && (
-        <div className="flex justify-between text-sm">
-          <span>{label}</span><span className="tabular-nums text-slate-500">{pct.toFixed(0)} %</span>
+        <div className="flex justify-between gap-3 text-sm">
+          <span className="min-w-0 truncate">{label}</span>
+          <span className="num text-muted-foreground">{pct.toFixed(0)} %</span>
         </div>
       )}
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" role="progressbar"
-        aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
-        <div className={`h-full rounded-full transition-all ${colors[tone] || colors.blue}`} style={{ width: `${pct}%` }} />
-      </div>
+      <Progress value={pct} aria-label={label || "Progress"} className={`h-2 ${TONES[tone] || TONES.blue}`} />
     </div>
   );
 }
 
-// Follow one job: ask every second until it has finished.
+// Follow one job until it has finished.
 function JobProgress({ jobId, onDone }) {
-  const [finished, setFinished] = useState(false);
+  const { job, error, cancel } = useJob(jobId, { onDone });
   const [cancelProblem, setCancelProblem] = useState("");
-  const told = useRef(false);
-  const { data: job, error } = usePolling(() => apiGet(`jobs/${jobId}`), 1, { key: jobId, enabled: !finished });
-
-  useEffect(() => {
-    if (!job?.finished || told.current) return;
-    told.current = true;
-    setFinished(true);
-    onDone?.(job);
-  }, [job, onDone]);
 
   if (error && !job) return <ErrorBox error={error} />;
   if (!job) return <Bar value={0} label="Starting…" />;
-  const tone = job.status === "done" ? "green" : job.status === "failed" ? "red" : job.status === "cancelled" ? "amber" : "blue";
-
-  // Ask the API to stop the job.
-  const cancel = () => apiPost(`jobs/${jobId}/cancel`).catch((err) => setCancelProblem(err.message));
-
+  const tone = { done: "green", failed: "red", cancelled: "amber" }[job.status] || "blue";
+  const label = `${STATUS_TEXT[job.status] || job.status}${job.message ? `: ${job.message}` : ""}`;
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-      <Bar value={job.progress} label={`${STATUS_TEXT[job.status] || job.status}${job.message ? `: ${job.message}` : ""}`} tone={tone} />
+    <div className="space-y-3 rounded-xl border bg-card p-4">
+      <Bar value={job.progress} label={label} tone={tone} />
       {!job.finished && (
-        <button onClick={cancel} disabled={job.cancel_requested}
-          className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800">
-          {job.cancel_requested ? "Stopping…" : "Cancel"}
-        </button>
+        <Button variant="outline" size="sm" disabled={job.cancel_requested}
+          onClick={() => cancel().catch((err) => setCancelProblem(err.message))}>
+          <X aria-hidden="true" /> {job.cancel_requested ? "Stopping…" : "Cancel"}
+        </Button>
       )}
       {job.status === "failed" && job.error && <ErrorBox message={job.error} />}
       {cancelProblem && <ErrorBox message={cancelProblem} />}

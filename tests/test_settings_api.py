@@ -240,3 +240,10 @@ def test_no_secret_in_any_answer(monkeypatch):
     assert {"GET /api/settings/status", "GET /api/settings/other", "POST /api/settings/db-check",
             "GET /api/settings/backups", "GET /api/scheduler/jobs",
             "POST /api/scheduler/jobs/eod_report/run"} <= set(walked)
+
+
+# The cost boxes: the same list as costs.COST_FIELDS, so the web form matches Streamlit's.
+def test_cost_fields_route(client):
+    from marketlens.costs import COST_FIELDS
+    fields = client.get("/api/settings/cost-fields").json()["fields"]
+    assert fields == COST_FIELDS and [f["name"] for f in fields][0] == "brokerage_per_order"

@@ -1,14 +1,17 @@
 "use client";
-// Buttons that save a CSV or Excel file made by an API endpoint.
+// Buttons that save a CSV or Excel file made by an API endpoint: a spinner while it is made, then a toast.
 //
 //   <DownloadButton path="market/history/download" params={{ symbol, period }} formats={["csv", "xlsx"]} />
 //
-// The file name comes from the API (Content-Disposition); a problem is shown as a readable message.
+// The file name comes from the API (Content-Disposition). A 401 goes to the login page.
+import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
-import { ApiError, NOT_RUNNING, apiUrl } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { ApiError, NOT_RUNNING, apiUrl, goToLogin } from "@/lib/api";
 
-const LABELS = { csv: "⬇️ CSV", xlsx: "⬇️ Excel" };
+const LABELS = { csv: "CSV", xlsx: "Excel" };
 
 // The file name the API suggested, or a fallback.
 function fileNameOf(response, fallback) {
@@ -17,7 +20,18 @@ function fileNameOf(response, fallback) {
   return match ? match[1] : fallback;
 }
 
-// Ask the API for the file and hand it to the browser to save.
+// Hand a file (Blob) to the browser to save.
+export function saveBlob(blob, name) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+// Ask the API for the file and save it; returns the file name.
 async function download(path, params, format) {
   const query = new URLSearchParams({ ...params, format });
   let response;
@@ -26,32 +40,27 @@ async function download(path, params, format) {
   } catch {
     throw new ApiError(NOT_RUNNING);
   }
+  if (response.status === 401) goToLogin(path);
   if (!response.ok) {
     const answer = await response.json().catch(() => null);
     throw new ApiError(answer?.error || NOT_RUNNING, response.status);
   }
-  const blob = await response.blob();
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = fileNameOf(response, `marketlens.${format}`);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  const name = fileNameOf(response, `marketlens.${format}`);
+  saveBlob(await response.blob(), name);
+  return name;
 }
 
 export default function DownloadButton({ path, params = {}, formats = ["csv"], disabled = false }) {
   const [busy, setBusy] = useState("");
-  const [problem, setProblem] = useState("");
 
-  // One button press: download that format.
+  // One button press: download that format, then say how it went.
   const save = async (format) => {
     setBusy(format);
-    setProblem("");
     try {
-      await download(path, params, format);
+      const name = await download(path, params, format);
+      toast.success("Download ready", { description: name });
     } catch (err) {
-      setProblem(err.message);
+      toast.error("Download failed", { description: err.message });
     } finally {
       setBusy("");
     }
@@ -60,13 +69,11 @@ export default function DownloadButton({ path, params = {}, formats = ["csv"], d
   return (
     <div className="flex flex-wrap items-center gap-2">
       {formats.map((f) => (
-        <button key={f} onClick={() => save(f)} disabled={disabled || Boolean(busy)}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-50
-            dark:border-slate-700 dark:hover:bg-slate-800">
-          {busy === f ? "Preparing…" : LABELS[f] || `⬇️ ${f.toUpperCase()}`}
-        </button>
+        <Button key={f} variant="outline" size="sm" onClick={() => save(f)} disabled={disabled || Boolean(busy)}>
+          {busy === f ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+          {busy === f ? "Preparing…" : LABELS[f] || f.toUpperCase()}
+        </Button>
       ))}
-      {problem && <span role="alert" className="text-sm text-red-600">{problem}</span>}
     </div>
   );
 }

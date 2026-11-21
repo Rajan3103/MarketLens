@@ -73,7 +73,7 @@ export default function LimitsTab({ status, marketOpen, onChanged }) {
               </button>
             </>
           ) : (
-            <DangerButton tick="Yes, block all new orders today" label="Kill switch ON"
+            <DangerButton tick="Every new order is blocked for the rest of the day." label="Kill switch ON" confirmWord="STOP"
               onConfirm={() => send("live/kill", { confirm: "KILL" })} />
           )}
         </section>
@@ -84,7 +84,8 @@ export default function LimitsTab({ status, marketOpen, onChanged }) {
               : "Closes every paper position at its last price"}, switches the kill switch on and stops every deployed
             strategy.
           </p>
-          <DangerButton tick="Yes, close every position now" label="Square off everything"
+          <DangerButton tick="Every open position is closed now, the kill switch goes on and every deployed strategy stops."
+            label="Square off everything" confirmWord="STOP"
             onConfirm={() => send("live/square-off", { confirm: "SQUARE OFF" })} />
         </section>
       </div>

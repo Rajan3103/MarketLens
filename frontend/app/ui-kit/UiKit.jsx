@@ -1,5 +1,6 @@
 "use client";
-// The UI kit showcase: colours, fonts, number formats and all 30 shadcn/ui components with sample data.
+// The UI kit showcase: MarketLens components (AppComponents.jsx) first, then colours, fonts, number formats and
+// all 30 shadcn/ui components with sample data.
 // Switch the theme with the sun / moon button to check both looks. Made-up data only.
 import { ChevronsUpDown, Info, Power, Search, TrendingDown, TrendingUp } from "lucide-react";
 import { useState } from "react";
@@ -47,6 +48,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import AppComponents from "./AppComponents";
 import {
   formatDate, formatInt, formatPct, formatRelative, formatRs, formatTimeIST, pnlClass,
 } from "@/lib/format";
@@ -433,6 +435,8 @@ export default function UiKit() {
         <ThemeToggle />
       </div>
 
+      <Section title="MarketLens components"><AppComponents /></Section>
+      <Separator />
       <Section title="Colours"><Swatches /><TradingColours /></Section>
       <Separator />
       <Section title="Fonts and number formats"><Typography /></Section>

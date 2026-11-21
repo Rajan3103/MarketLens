@@ -1,6 +1,7 @@
 """A portfolio backtest result as JSON for the web page's <BacktestResults> component.
 
-    result_json(result)  -> {"summary": {...}, "comparison": [...], "yearly": [...], "equity_chart": {...},
+    result_json(result)  -> result_to_json(result) (the shared shape) plus
+                            {"summary": {...}, "comparison": [...], "yearly": [...], "equity_chart": {...},
                              "drawdown_chart": {...}, "holdings": [...], "rebalances": [...], "trades": [...], ...}
 
 Works for any BacktestResult whose extras have "benchmarks" (name -> value curve), "rebalances" and
@@ -15,7 +16,6 @@ from marketlens.momentum.portfolio_bt import comparison_table, yearly_table
 
 NOTE = "Historical analysis for learning, not a live trading recommendation."
 EXTRA_COLORS = ["#7c3aed", "#0d9488", "#ca8a04"]
-TRADES_SHOWN = 2000                  # newest trades sent to the page; the CSV / Excel report has all of them
 
 
 # The value chart: strategy, Nifty 50 and any other benchmark (e.g. a Nifty 200 Momentum 30 ETF).
@@ -44,20 +44,23 @@ def summary(result: BacktestResult) -> dict:
     return out
 
 
-# Everything the results component shows.
+# Everything the results component shows: the shared shape every backtest answers (backtest/present.py:
+# metrics, equity, drawdown, benchmarks, yearly / monthly returns, heatmaps, trades, historical) plus the
+# portfolio's own tables (summary, comparison, holdings, rebalances, tax by year) for its extra tabs.
 def result_json(result: BacktestResult) -> dict:
+    from marketlens.backtest.present import result_to_json
     x = result.extras
-    trades = result.trades_frame().tail(TRADES_SHOWN).iloc[::-1]
-    return {"name": result.name, "start": result.start.isoformat(), "end": result.end.isoformat(),
-            "capital": result.capital, "is_demo": result.is_demo, "params": result.params,
-            "benchmark_name": result.benchmark_name, "summary": summary(result),
-            "comparison": df_to_records(comparison_table(result)), "yearly": df_to_records(yearly_table(result)),
-            "equity_chart": fig_to_json(value_chart(result)), "drawdown_chart": fig_to_json(drawdown_chart(result)),
-            "holdings": df_to_records(_holdings(x.get("holdings"))),
-            "rebalances": df_to_records(x["rebalances"]) if len(x.get("rebalances", [])) else [],
-            "tax_by_year": df_to_records(x["tax_by_year"]) if "tax_by_year" in x else [],
-            "trades": df_to_records(trades), "trades_total": len(result.trades),
-            "notes": x.get("notes", [NOTE]), "run_id": x.get("run_id")}
+    out = result_to_json(result)
+    out.update({
+        "summary": summary(result),
+        "comparison": df_to_records(comparison_table(result)), "yearly": df_to_records(yearly_table(result)),
+        "equity_chart": fig_to_json(value_chart(result)), "drawdown_chart": fig_to_json(drawdown_chart(result)),
+        "holdings": df_to_records(_holdings(x.get("holdings"))),
+        "rebalances": df_to_records(x["rebalances"]) if len(x.get("rebalances", [])) else [],
+        "tax_by_year": df_to_records(x["tax_by_year"]) if "tax_by_year" in x else [],
+        "notes": x.get("notes", [NOTE]), "run_id": x.get("run_id"),
+    })
+    return out
 
 
 # The final holdings without the rebalance columns.

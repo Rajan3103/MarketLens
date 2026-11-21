@@ -3,6 +3,7 @@
 import { Inter, JetBrains_Mono } from "next/font/google";
 
 import AppShell from "@/components/AppShell";
+import QueryProvider from "@/components/QueryProvider";
 import ThemeProvider from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,10 +25,12 @@ export default function RootLayout({ children }) {
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}>
       <body className="min-h-full">
         <ThemeProvider>
-          <TooltipProvider>
-            <AppShell>{children}</AppShell>
-            <Toaster richColors closeButton position="bottom-right" />
-          </TooltipProvider>
+          <QueryProvider>
+            <TooltipProvider>
+              <AppShell>{children}</AppShell>
+              <Toaster richColors closeButton position="bottom-right" />
+            </TooltipProvider>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>
